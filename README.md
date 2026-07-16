@@ -1,12 +1,13 @@
 # Outlook Hebrew Translator
 
-An Outlook compose add-in that turns an English draft into a copy-ready Hebrew email. It asks for the recipient's gender so gendered Hebrew wording is correct, suggests an English subject, supplies the Hebrew subject, and preserves line breaks and links in the body.
+An Outlook compose add-in that translates English drafts into Hebrew or Russian, and Hebrew drafts into English. It asks for the recipient form when translating into Hebrew or Russian so gendered wording is correct, suggests an English subject, supplies a copy-ready translated subject, and preserves line breaks and links in the body.
 
 ## What it does
 
 1. Open a new email or reply in Outlook and select **Hebrew Translator**.
-2. Choose **Man**, **Woman**, **Men**, or **Women** for the person or people being addressed. Hebrew agreement follows the selected singular/plural gender.
-3. Select **Translate draft**.
+2. Choose **English → Hebrew**, **English → Russian**, or **Hebrew → English**.
+3. When translating to Hebrew or Russian, choose **Man**, **Woman**, **Men**, or **Women** for the person or people being addressed. The target-language agreement follows the selection.
+4. Select **Translate draft**.
 4. Review the result. Each response starts with the selected gender, then shows the English subject suggestion, Hebrew subject, and the Hebrew body.
 5. Use **Apply Hebrew subject & body** to replace the draft, or copy either field.
 

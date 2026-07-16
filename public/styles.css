@@ -12,6 +12,8 @@ button:disabled { opacity: .55; cursor: wait; }
 #status { min-height: 20px; color: #a4262c; }
 #result { margin-top: 18px; }
 .gender-label { margin: 0 0 14px; font-weight: 700; }
-textarea, #hebrew-body { width: 100%; margin: 5px 0 14px; border: 1px solid #bbb; border-radius: 4px; padding: 9px; background: white; font: inherit; }
-#hebrew-body { min-height: 140px; white-space: normal; overflow-wrap: anywhere; }
+textarea { width: 100%; margin: 5px 0 14px; border: 1px solid #bbb; border-radius: 4px; padding: 9px; background: white; font: inherit; }
+select { width: 100%; margin: 5px 0 14px; border: 1px solid #bbb; border-radius: 4px; padding: 8px; background: white; font: inherit; }
+#translated-body, #translated-subject { width: 100%; margin: 5px 0 14px; border: 1px solid #bbb; border-radius: 4px; padding: 9px; background: white; font: inherit; }
+#translated-body { min-height: 140px; white-space: normal; overflow-wrap: anywhere; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }

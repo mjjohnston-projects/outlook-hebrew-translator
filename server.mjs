@@ -16,19 +16,20 @@ const responseSchema = {
   schema: {
     type: "object",
     additionalProperties: false,
-    required: ["englishSubject", "hebrewSubject", "hebrewBodyHtml"],
+    required: ["englishSubject", "translatedSubject", "translatedBodyHtml"],
     properties: {
       englishSubject: { type: "string" },
-      hebrewSubject: { type: "string" },
-      hebrewBodyHtml: { type: "string" }
+      translatedSubject: { type: "string" },
+      translatedBodyHtml: { type: "string" }
     }
   }
 };
 
 app.post("/api/translate", async (req, res) => {
-  const { subject, bodyHtml, recipientGender } = req.body || {};
+  const { subject, bodyHtml, recipientGender, direction } = req.body || {};
   if (!subject && !bodyHtml) return res.status(400).json({ error: "Write an email before translating it." });
-  if (!["man", "woman", "men", "women"].includes(recipientGender)) {
+  if (!["en-he", "en-ru", "he-en"].includes(direction)) return res.status(400).json({ error: "Choose a supported translation direction." });
+  if (direction !== "he-en" && !["man", "woman", "men", "women"].includes(recipientGender)) {
     return res.status(400).json({ error: "Select who is being addressed." });
   }
   if (!process.env.OPENAI_API_KEY || !process.env.OPENAI_MODEL) {
@@ -42,7 +43,9 @@ app.post("/api/translate", async (req, res) => {
     men: "The email addresses multiple men. Use masculine plural Hebrew forms whenever addressing the recipients.",
     women: "The email addresses multiple women. Use feminine plural Hebrew forms whenever addressing the recipients."
   };
-  const genderInstruction = recipientInstructions[recipientGender];
+  const target = direction === "en-he" ? "Hebrew" : direction === "en-ru" ? "Russian" : "English";
+  const source = direction === "he-en" ? "Hebrew" : "English";
+  const genderInstruction = direction === "he-en" ? "No recipient gender selection is needed for an English translation." : recipientInstructions[recipientGender];
 
   try {
     const completion = await client.chat.completions.create({
@@ -51,9 +54,9 @@ app.post("/api/translate", async (req, res) => {
       messages: [
         {
           role: "system",
-          content: `You are an expert English-to-Hebrew business email translator. ${genderInstruction}
-Return only JSON that satisfies the schema. Create a concise, appropriate English subject based on the email's intent; preserve the existing subject when it is already appropriate. Translate it into natural Hebrew.
-Translate the email body into Hebrew. Preserve the input HTML structure exactly where possible: keep every hyperlink href unchanged, keep link text translated, keep all paragraph, line-break, list, and table boundaries so the translated message has the same visual breaks. Do not invent, remove, or move URLs. Keep email addresses, numbers, dates, file names, identifiers, and code unchanged unless Hebrew punctuation needs surrounding spacing. If the sign-off is exactly or substantively 'Regards, Michael', translate it exactly as 'בברכה, מייקל'. Do not add a gender label, headings, Markdown, or commentary to hebrewBodyHtml.`
+          content: `You are an expert business email translator. Translate from ${source} to ${target}. ${genderInstruction}
+Return only JSON that satisfies the schema. englishSubject must be a concise, appropriate English subject based on the email's intent. If translating Hebrew to English, it is the translated English subject; otherwise preserve the existing English subject when it is appropriate. translatedSubject is the subject in ${target}.
+Translate the email body into ${target}. Preserve the input HTML structure exactly where possible: keep every hyperlink href unchanged, keep link text translated, keep all paragraph, line-break, list, and table boundaries so the translated message has the same visual breaks. Do not invent, remove, or move URLs. Keep email addresses, numbers, dates, file names, identifiers, and code unchanged unless target-language punctuation needs surrounding spacing. When translating English to Hebrew, if the sign-off is exactly or substantively 'Regards, Michael', translate it exactly as 'בברכה, מייקל'. Do not add a gender label, headings, Markdown, or commentary to translatedBodyHtml.`
         },
         {
           role: "user",
@@ -65,7 +68,7 @@ Translate the email body into Hebrew. Preserve the input HTML structure exactly 
     if (!content) throw new Error("The translation service returned no content.");
     const translated = JSON.parse(content);
     // The model is asked to retain the email's HTML; still, never render active content in the task pane.
-    translated.hebrewBodyHtml = sanitizeHtml(translated.hebrewBodyHtml, {
+    translated.translatedBodyHtml = sanitizeHtml(translated.translatedBodyHtml, {
       allowedTags: ["a", "b", "strong", "i", "em", "u", "s", "span", "p", "br", "div", "ul", "ol", "li", "table", "thead", "tbody", "tr", "td", "th", "blockquote", "hr"],
       allowedAttributes: { "a": ["href", "title"], "span": ["style"], "p": ["style"], "div": ["style"], "td": ["style", "colspan", "rowspan"], "th": ["style", "colspan", "rowspan"] },
       allowedSchemes: ["http", "https", "mailto"],

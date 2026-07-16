@@ -11,8 +11,14 @@
   <body>
     <main>
       <h1>Hebrew Translator</h1>
-      <p class="intro">Translate the current English draft into Hebrew.</p>
-      <fieldset>
+      <p class="intro">Translate the current email draft.</p>
+      <label for="direction">Translation direction</label>
+      <select id="direction">
+        <option value="en-he">English → Hebrew</option>
+        <option value="en-ru">English → Russian</option>
+        <option value="he-en">Hebrew → English</option>
+      </select>
+      <fieldset id="recipient-form">
         <legend>Who is being addressed?</legend>
         <label><input type="radio" name="gender" value="man" /> Man</label>
         <label><input type="radio" name="gender" value="woman" /> Woman</label>
@@ -25,14 +31,14 @@
         <p id="gender-label" class="gender-label"></p>
         <label for="english-subject">Suggested subject (English)</label>
         <textarea id="english-subject" rows="2" readonly></textarea>
-        <label for="hebrew-subject">Hebrew subject — ready to copy</label>
-        <textarea id="hebrew-subject" dir="rtl" lang="he" rows="2" readonly></textarea>
-        <label for="hebrew-body">Hebrew email body — ready to copy</label>
-        <div id="hebrew-body" dir="rtl" lang="he" contenteditable="false"></div>
+        <label id="translated-subject-label" for="translated-subject">Hebrew subject — ready to copy</label>
+        <textarea id="translated-subject" dir="rtl" lang="he" rows="2" readonly></textarea>
+        <label id="translated-body-label" for="translated-body">Hebrew email body — ready to copy</label>
+        <div id="translated-body" dir="rtl" lang="he" contenteditable="false"></div>
         <div class="actions">
-          <button id="copy-subject" type="button">Copy Hebrew subject</button>
-          <button id="copy-body" type="button">Copy Hebrew body</button>
-          <button id="apply" type="button" class="primary">Apply Hebrew subject &amp; body</button>
+          <button id="copy-subject" type="button">Copy translated subject</button>
+          <button id="copy-body" type="button">Copy translated body</button>
+          <button id="apply" type="button" class="primary">Apply translated subject &amp; body</button>
         </div>
       </section>
     </main>
