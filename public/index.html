@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hebrew Translator</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <main>
+      <h1>Hebrew Translator</h1>
+      <p class="intro">Translate the current English draft into Hebrew.</p>
+      <fieldset>
+        <legend>Who is being addressed?</legend>
+        <label><input type="radio" name="gender" value="man" /> Man</label>
+        <label><input type="radio" name="gender" value="woman" /> Woman</label>
+        <label><input type="radio" name="gender" value="men" /> Men</label>
+        <label><input type="radio" name="gender" value="women" /> Women</label>
+      </fieldset>
+      <button id="translate" type="button">Translate draft</button>
+      <p id="status" role="status"></p>
+      <section id="result" hidden>
+        <p id="gender-label" class="gender-label"></p>
+        <label for="english-subject">Suggested subject (English)</label>
+        <textarea id="english-subject" rows="2" readonly></textarea>
+        <label for="hebrew-subject">Hebrew subject — ready to copy</label>
+        <textarea id="hebrew-subject" dir="rtl" lang="he" rows="2" readonly></textarea>
+        <label for="hebrew-body">Hebrew email body — ready to copy</label>
+        <div id="hebrew-body" dir="rtl" lang="he" contenteditable="false"></div>
+        <div class="actions">
+          <button id="copy-subject" type="button">Copy Hebrew subject</button>
+          <button id="copy-body" type="button">Copy Hebrew body</button>
+          <button id="apply" type="button" class="primary">Apply Hebrew subject &amp; body</button>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

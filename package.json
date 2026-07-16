@@ -1,0 +1,19 @@
+{
+  "name": "outlook-hebrew-translator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch server.mjs",
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "openai": "^4.77.3",
+    "sanitize-html": "^2.14.0"
+  },
+  "devDependencies": {
+    "office-addin-dev-certs": "^2.0.10"
+  }
+}
