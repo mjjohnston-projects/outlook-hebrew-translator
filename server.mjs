@@ -49,10 +49,22 @@ const proofreadSchema = {
 };
 
 const sanitizeEmailHtml = (html) => sanitizeHtml(html, {
-  allowedTags: ["a", "b", "strong", "i", "em", "u", "s", "span", "p", "br", "div", "ul", "ol", "li", "table", "thead", "tbody", "tr", "td", "th", "blockquote", "hr"],
-  allowedAttributes: { "a": ["href", "title"], "span": ["style"], "p": ["style"], "div": ["style"], "td": ["style", "colspan", "rowspan"], "th": ["style", "colspan", "rowspan"] },
+  allowedTags: ["a", "b", "strong", "i", "em", "u", "s", "strike", "sub", "sup", "font", "span", "p", "br", "div", "ul", "ol", "li", "table", "thead", "tbody", "tr", "td", "th", "blockquote", "hr"],
+  allowedAttributes: { "a": ["href", "title"], "font": ["face", "size", "color"], "span": ["style"], "p": ["style"], "div": ["style"], "td": ["style", "colspan", "rowspan"], "th": ["style", "colspan", "rowspan"] },
   allowedSchemes: ["http", "https", "mailto"],
-  allowedStyles: { "*": { "text-align": [/^left$/, /^right$/, /^center$/], "direction": [/^ltr$/, /^rtl$/] } }
+  allowedStyles: {
+    "*": {
+      "text-align": [/^left$/, /^right$/, /^center$/],
+      "direction": [/^ltr$/, /^rtl$/],
+      "font-family": [/^[\w\s,.'"-]+$/],
+      "font-size": [/^\d+(?:\.\d+)?(?:px|pt|em|rem|%)$/],
+      "font-weight": [/^(?:normal|bold|[1-9]00)$/],
+      "font-style": [/^(?:normal|italic|oblique)$/],
+      "text-decoration": [/^(?:none|underline|line-through)$/],
+      "color": [/^(?:#[0-9a-fA-F]{3,8}|rgb\([\d\s,]+\)|[a-zA-Z]+)$/],
+      "background-color": [/^(?:#[0-9a-fA-F]{3,8}|rgb\([\d\s,]+\)|[a-zA-Z]+)$/]
+    }
+  }
 });
 
 app.post("/api/translate", async (req, res) => {
@@ -86,7 +98,7 @@ app.post("/api/translate", async (req, res) => {
           role: "system",
           content: `You are an expert business email translator. Translate from ${source} to ${target}. ${genderInstruction}
 Return only JSON that satisfies the schema. englishSubject must be a concise, appropriate English subject based on the email's intent. If translating Hebrew to English, it is the translated English subject; otherwise preserve the existing English subject when it is appropriate. translatedSubject is the subject in ${target}.
-Translate the email body into ${target}. Preserve the input HTML structure exactly where possible: keep every hyperlink href unchanged, keep link text translated, keep all paragraph, line-break, list, and table boundaries so the translated message has the same visual breaks. Do not invent, remove, or move URLs. Keep email addresses, numbers, dates, file names, identifiers, and code unchanged unless target-language punctuation needs surrounding spacing. When translating English to Hebrew, if the sign-off is exactly or substantively 'Regards, Michael', translate it exactly as 'בברכה, מייקל'. Do not add a gender label, headings, Markdown, or commentary to translatedBodyHtml.`
+Translate the email body into ${target}. Preserve the input HTML structure exactly where possible: keep every hyperlink href unchanged, keep link text translated, keep all paragraph, line-break, list, and table boundaries so the translated message has the same visual breaks. Retain each element's font family, font size, color, bold/italic/underline styling, and text alignment. Do not invent, remove, or move URLs. Keep email addresses, numbers, dates, file names, identifiers, and code unchanged unless target-language punctuation needs surrounding spacing. When translating English to Hebrew, if the sign-off is exactly or substantively 'Regards, Michael', translate it exactly as 'בברכה, מייקל'. Do not add a gender label, headings, Markdown, or commentary to translatedBodyHtml.`
         },
         {
           role: "user",
@@ -127,7 +139,7 @@ app.post("/api/proofread", async (req, res) => {
       model: process.env.OPENAI_MODEL,
       response_format: { type: "json_schema", json_schema: proofreadSchema },
       messages: [
-        { role: "system", content: `You are a meticulous ${language} business-email proofreader. Return only JSON that satisfies the schema. Correct only spelling, grammar, punctuation, capitalization, and obvious typographical mistakes in the subject and body. Do not translate, change the email's meaning or tone, rewrite sentences for style, add content, remove content, or add commentary. Preserve the input HTML structure exactly where possible: keep every hyperlink href unchanged and preserve all paragraph, line-break, list, and table boundaries.` },
+        { role: "system", content: `You are a meticulous ${language} business-email proofreader. Return only JSON that satisfies the schema. Correct only spelling, grammar, punctuation, capitalization, and obvious typographical mistakes in the subject and body. Do not translate, change the email's meaning or tone, rewrite sentences for style, add content, remove content, or add commentary. Preserve the input HTML structure exactly where possible: keep every hyperlink href, all font family, font size, color, bold/italic/underline styling, and all paragraph, line-break, list, and table boundaries.` },
         { role: "user", content: JSON.stringify({ subject: subject || "", bodyHtml: bodyHtml || "" }) }
       ]
     });
