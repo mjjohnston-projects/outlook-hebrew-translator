@@ -20,7 +20,9 @@ The add-in can also proofread an English, Hebrew, or Russian draft. Choose the p
 Prerequisites: Node.js 20+ and an OpenAI API key. The default model is `gpt-4.1-mini`, selected for fast, capable translation and proofreading.
 
 ```powershell
-cd C:\Users\michaeljo1\Documents\Codex\2026-07-16\i-wou\outputs\outlook-email-language-assistant
+# Run this from the folder that contains package.json.
+$HOME_DIR = (Resolve-Path .).Path
+Set-Location $HOME_DIR
 Copy-Item .env.example .env
 # Edit .env and set OPENAI_API_KEY and OPENAI_MODEL.
 npm install
@@ -44,7 +46,9 @@ Deploy this app to any HTTPS-capable Node host. Set `OPENAI_API_KEY` and `OPENAI
 To start the local translation server automatically whenever you sign in to Windows, run the following once from PowerShell:
 
 ```powershell
-cd C:\Users\michaeljo1\Documents\Codex\2026-07-16\i-wou\outputs\outlook-email-language-assistant
+# Run this from the folder that contains package.json.
+$HOME_DIR = (Resolve-Path .).Path
+Set-Location $HOME_DIR
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1
 ```
 
