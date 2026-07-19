@@ -1,10 +1,10 @@
-# Outlook Hebrew Translator
+# Outlook Email Language Assistant
 
 An Outlook compose add-in that translates English drafts into Hebrew or Russian, and Hebrew drafts into English. It asks for the recipient form when translating into Hebrew or Russian so gendered wording is correct, suggests an English subject, supplies a copy-ready translated subject, and preserves line breaks and links in the body.
 
 ## What it does
 
-1. Open a new email or reply in Outlook and select **Hebrew Translator**.
+1. Open a new email or reply in Outlook and select **Email Language Assistant**.
 2. Choose **English → Hebrew**, **English → Russian**, or **Hebrew → English**.
 3. When translating to Hebrew or Russian, choose **Man**, **Woman**, **Men**, or **Women** for the person or people being addressed. The target-language agreement follows the selection.
 4. Select **Translate draft**.
@@ -13,12 +13,14 @@ An Outlook compose add-in that translates English drafts into Hebrew or Russian,
 
 `Regards, Michael` is explicitly rendered as `בברכה, מייקל`.
 
+The add-in can also proofread an English, Hebrew, or Russian draft. Choose the proofread language, then select **Check spelling & grammar**. It corrects spelling, grammar, punctuation, capitalization, and clear typos without translating or rewriting the email.
+
 ## Run locally
 
-Prerequisites: Node.js 20+ and an OpenAI API key.
+Prerequisites: Node.js 20+ and an OpenAI API key. The default model is `gpt-5-nano`, selected for low-cost translation and proofreading.
 
 ```powershell
-cd C:\Users\michaeljo1\Documents\Codex\2026-07-16\i-wou\outputs\outlook-hebrew-translator
+cd C:\Users\michaeljo1\Documents\Codex\2026-07-16\i-wou\outputs\outlook-email-language-assistant
 Copy-Item .env.example .env
 # Edit .env and set OPENAI_API_KEY and OPENAI_MODEL.
 npm install
@@ -42,11 +44,30 @@ Deploy this app to any HTTPS-capable Node host. Set `OPENAI_API_KEY` and `OPENAI
 To start the local translation server automatically whenever you sign in to Windows, run the following once from PowerShell:
 
 ```powershell
-cd C:\Users\michaeljo1\Documents\Codex\2026-07-16\i-wou\outputs\outlook-hebrew-translator
+cd C:\Users\michaeljo1\Documents\Codex\2026-07-16\i-wou\outputs\outlook-email-language-assistant
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1
 ```
 
-This creates a user-level **Outlook Hebrew Translator** scheduled task and starts it immediately. It does not require administrator access. To remove it later, run `./scripts/uninstall-startup.ps1`. Outlook loads the service from `https://localhost:3000` on this Windows PC only.
+This creates a user-level **Outlook Email Language Assistant** background service and starts it immediately. Task Scheduler restarts it up to three times if it exits unexpectedly. Outlook loads the service from `https://localhost:3000` on this Windows PC only.
+
+Restart the service at any time with:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\restart-service.ps1
+```
+
+To remove it later, run `./scripts/uninstall-startup.ps1`.
+
+## Native Windows service
+
+For an entry in `services.msc`, build and install the included native Windows service wrapper. This replaces the scheduled-task service and requires administrator confirmation.
+
+```powershell
+dotnet publish .\service\EmailLanguageAssistantService.csproj -c Release -r win-x64 -o .\service\publish
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-native-service.ps1
+```
+
+After installation, open `services.msc` and manage **Outlook Email Language Assistant** like any other Windows service. To uninstall it, run `./scripts/uninstall-native-service.ps1` from an elevated PowerShell window.
 
 ## Privacy
 

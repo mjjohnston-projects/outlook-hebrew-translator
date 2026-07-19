@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $appRoot = Split-Path -Parent $PSScriptRoot
 $node = (Get-Command node -ErrorAction Stop).Source
 $existing = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
-  Where-Object { $_.CommandLine -like '*outlook-hebrew-translator*server.mjs*' }
+  Where-Object { $_.CommandLine -like '*outlook-email-language-assistant*server.mjs*' }
 
 if ($existing) { exit 0 }
 

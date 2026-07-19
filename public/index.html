@@ -3,14 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Hebrew Translator</title>
+    <title>Email Language Assistant</title>
     <link rel="stylesheet" href="styles.css" />
     <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
     <script defer src="app.js"></script>
   </head>
   <body>
     <main>
-      <h1>Hebrew Translator</h1>
+      <h1>Email Language Assistant</h1>
       <p class="intro">Translate the current email draft.</p>
       <label for="direction">Translation direction</label>
       <select id="direction">
@@ -20,19 +20,32 @@
       </select>
       <fieldset id="recipient-form">
         <legend>Who is being addressed?</legend>
-        <label><input type="radio" name="gender" value="man" /> Man</label>
-        <label><input type="radio" name="gender" value="woman" /> Woman</label>
-        <label><input type="radio" name="gender" value="men" /> Men</label>
-        <label><input type="radio" name="gender" value="women" /> Women</label>
+        <div class="recipient-options">
+          <label class="radio-option"><input type="radio" name="gender" value="man" /><span>Man</span></label>
+          <label class="radio-option"><input type="radio" name="gender" value="woman" /><span>Woman</span></label>
+          <label class="radio-option"><input type="radio" name="gender" value="men" /><span>Men</span></label>
+          <label class="radio-option"><input type="radio" name="gender" value="women" /><span>Women</span></label>
+        </div>
       </fieldset>
       <button id="translate" type="button">Translate draft</button>
+      <section class="proofread">
+        <label for="proofread-language">Or proofread this email in</label>
+        <select id="proofread-language">
+          <option value="English">English</option>
+          <option value="Hebrew">Hebrew</option>
+          <option value="Russian">Russian</option>
+        </select>
+        <button id="proofread" type="button">Check spelling &amp; grammar</button>
+      </section>
       <p id="status" role="status"></p>
       <section id="result" hidden>
         <p id="gender-label" class="gender-label"></p>
-        <label for="english-subject">Suggested subject (English)</label>
+        <label id="english-subject-label" for="english-subject">Suggested subject (English)</label>
         <textarea id="english-subject" rows="2" readonly></textarea>
-        <label id="translated-subject-label" for="translated-subject">Hebrew subject — ready to copy</label>
-        <textarea id="translated-subject" dir="rtl" lang="he" rows="2" readonly></textarea>
+        <div id="translated-subject-group">
+          <label id="translated-subject-label" for="translated-subject">Hebrew subject — ready to copy</label>
+          <textarea id="translated-subject" dir="rtl" lang="he" rows="2" readonly></textarea>
+        </div>
         <label id="translated-body-label" for="translated-body">Hebrew email body — ready to copy</label>
         <div id="translated-body" dir="rtl" lang="he" contenteditable="false"></div>
         <div class="actions">

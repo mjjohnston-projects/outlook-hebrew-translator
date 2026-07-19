@@ -2,4 +2,6 @@
 node_modules/
 logs/
 npm-debug.log*
-
+service/bin/
+service/obj/
+service/publish/

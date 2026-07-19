@@ -1,4 +1,5 @@
 import "dotenv/config";
+import fs from "node:fs";
 import https from "node:https";
 import express from "express";
 import OpenAI from "openai";
@@ -24,6 +25,27 @@ const responseSchema = {
     }
   }
 };
+
+const proofreadSchema = {
+  name: "outlook_proofreading",
+  strict: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["subject", "bodyHtml"],
+    properties: {
+      subject: { type: "string" },
+      bodyHtml: { type: "string" }
+    }
+  }
+};
+
+const sanitizeEmailHtml = (html) => sanitizeHtml(html, {
+  allowedTags: ["a", "b", "strong", "i", "em", "u", "s", "span", "p", "br", "div", "ul", "ol", "li", "table", "thead", "tbody", "tr", "td", "th", "blockquote", "hr"],
+  allowedAttributes: { "a": ["href", "title"], "span": ["style"], "p": ["style"], "div": ["style"], "td": ["style", "colspan", "rowspan"], "th": ["style", "colspan", "rowspan"] },
+  allowedSchemes: ["http", "https", "mailto"],
+  allowedStyles: { "*": { "text-align": [/^left$/, /^right$/, /^center$/], "direction": [/^ltr$/, /^rtl$/] } }
+});
 
 app.post("/api/translate", async (req, res) => {
   const { subject, bodyHtml, recipientGender, direction } = req.body || {};
@@ -68,12 +90,7 @@ Translate the email body into ${target}. Preserve the input HTML structure exact
     if (!content) throw new Error("The translation service returned no content.");
     const translated = JSON.parse(content);
     // The model is asked to retain the email's HTML; still, never render active content in the task pane.
-    translated.translatedBodyHtml = sanitizeHtml(translated.translatedBodyHtml, {
-      allowedTags: ["a", "b", "strong", "i", "em", "u", "s", "span", "p", "br", "div", "ul", "ol", "li", "table", "thead", "tbody", "tr", "td", "th", "blockquote", "hr"],
-      allowedAttributes: { "a": ["href", "title"], "span": ["style"], "p": ["style"], "div": ["style"], "td": ["style", "colspan", "rowspan"], "th": ["style", "colspan", "rowspan"] },
-      allowedSchemes: ["http", "https", "mailto"],
-      allowedStyles: { "*": { "text-align": [/^left$/, /^right$/, /^center$/], "direction": [/^ltr$/, /^rtl$/] } }
-    });
+    translated.translatedBodyHtml = sanitizeEmailHtml(translated.translatedBodyHtml);
     res.json(translated);
   } catch (error) {
     console.error(error);
@@ -90,7 +107,42 @@ Translate the email body into ${target}. Preserve the input HTML structure exact
   }
 });
 
-const httpsOptions = await devCerts.getHttpsServerOptions();
+app.post("/api/proofread", async (req, res) => {
+  const { subject, bodyHtml, language } = req.body || {};
+  if (!subject && !bodyHtml) return res.status(400).json({ error: "Write an email before proofreading it." });
+  if (!["English", "Hebrew", "Russian"].includes(language)) return res.status(400).json({ error: "Choose English, Hebrew, or Russian." });
+  if (!process.env.OPENAI_API_KEY || !process.env.OPENAI_MODEL) return res.status(500).json({ error: "The server is missing OPENAI_API_KEY or OPENAI_MODEL." });
+
+  try {
+    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const completion = await client.chat.completions.create({
+      model: process.env.OPENAI_MODEL,
+      response_format: { type: "json_schema", json_schema: proofreadSchema },
+      messages: [
+        { role: "system", content: `You are a meticulous ${language} business-email proofreader. Return only JSON that satisfies the schema. Correct only spelling, grammar, punctuation, capitalization, and obvious typographical mistakes in the subject and body. Do not translate, change the email's meaning or tone, rewrite sentences for style, add content, remove content, or add commentary. Preserve the input HTML structure exactly where possible: keep every hyperlink href unchanged and preserve all paragraph, line-break, list, and table boundaries.` },
+        { role: "user", content: JSON.stringify({ subject: subject || "", bodyHtml: bodyHtml || "" }) }
+      ]
+    });
+    const content = completion.choices[0]?.message?.content;
+    if (!content) throw new Error("The proofreading service returned no content.");
+    const corrected = JSON.parse(content);
+    corrected.bodyHtml = sanitizeEmailHtml(corrected.bodyHtml);
+    res.json(corrected);
+  } catch (error) {
+    console.error(error);
+    const status = Number(error?.status) || 502;
+    const providerMessage = typeof error?.message === "string" ? error.message : "Unknown provider error.";
+    const guidance = status === 401 ? "OpenAI authentication failed. Check OPENAI_API_KEY in .env."
+      : status === 404 ? "The configured OPENAI_MODEL is unavailable to this API project."
+      : status === 429 ? "The OpenAI project has reached a usage limit or needs billing enabled."
+      : `Proofreading provider error: ${providerMessage}`;
+    res.status(status >= 400 && status < 600 ? status : 502).json({ error: guidance });
+  }
+});
+
+const httpsOptions = process.env.TLS_CERT_PATH && process.env.TLS_KEY_PATH
+  ? { cert: fs.readFileSync(process.env.TLS_CERT_PATH), key: fs.readFileSync(process.env.TLS_KEY_PATH) }
+  : await devCerts.getHttpsServerOptions();
 https.createServer(httpsOptions, app).listen(port, () => {
-  console.log(`Outlook Hebrew Translator listening on https://localhost:${port}`);
+  console.log(`Outlook Email Language Assistant listening on https://localhost:${port}`);
 });

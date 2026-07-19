@@ -7,6 +7,7 @@ Office.onReady((info) => {
     return;
   }
   $("#translate").addEventListener("click", translateDraft);
+  $("#proofread").addEventListener("click", proofreadDraft);
   $("#direction").addEventListener("change", updateDirectionUi);
   $("#copy-subject").addEventListener("click", () => copyText($("#translated-subject").value));
   $("#copy-body").addEventListener("click", copyBody);
@@ -66,6 +67,8 @@ async function translateDraft() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Translation failed.");
     translated = data;
+    $("#english-subject-label").textContent = "Suggested subject (English)";
+    $("#translated-subject-group").hidden = false;
     $("#gender-label").textContent = direction.needsRecipientForm ? `Recipient: ${recipientLabels[recipientGender]}` : "Translation: Hebrew to English";
     $("#english-subject").value = data.englishSubject;
     $("#translated-subject-label").textContent = `${direction.label} subject — ready to copy`;
@@ -78,6 +81,36 @@ async function translateDraft() {
     showStatus("");
   } catch (error) {
     showStatus(error.message || "Unable to translate this draft.");
+  } finally { button.disabled = false; }
+}
+
+async function proofreadDraft() {
+  const language = $("#proofread-language").value;
+  const button = $("#proofread");
+  button.disabled = true;
+  showStatus("Checking spelling and grammar…");
+  try {
+    const [subject, bodyHtml] = await Promise.all([getSubject(), getBody()]);
+    const response = await fetch("/api/proofread", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subject, bodyHtml, language })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Proofreading failed.");
+    translated = { translatedSubject: data.subject, translatedBodyHtml: data.bodyHtml };
+    $("#gender-label").textContent = `Spelling & grammar: ${language}`;
+    $("#english-subject-label").textContent = "Corrected subject — ready to copy";
+    $("#english-subject").value = data.subject;
+    $("#translated-subject-group").hidden = true;
+    $("#translated-body-label").textContent = "Corrected email body — ready to copy";
+    $("#translated-body").innerHTML = data.bodyHtml;
+    const isHebrew = language === "Hebrew";
+    $("#translated-body").dir = isHebrew ? "rtl" : "ltr";
+    $("#translated-body").lang = isHebrew ? "he" : language === "Russian" ? "ru" : "en";
+    $("#result").hidden = false;
+    showStatus("");
+  } catch (error) {
+    showStatus(error.message || "Unable to proofread this draft.");
   } finally { button.disabled = false; }
 }
 
