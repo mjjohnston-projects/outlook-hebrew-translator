@@ -92,6 +92,18 @@ function splitPreservedTail(bodyHtml) {
     preservedTailHtml: bodyHtml.slice(tailStart)
   };
 }
+
+function alignTranslatedBody(bodyHtml, direction) {
+  if (direction.dir !== "rtl") return bodyHtml;
+  const documentFragment = new DOMParser().parseFromString(bodyHtml, "text/html");
+  documentFragment.body.querySelectorAll("p, div, li, td, th, blockquote, table").forEach((element) => {
+    element.dir = "rtl";
+    const alignment = element.style.textAlign.toLowerCase();
+    if (!alignment || alignment === "left") element.style.textAlign = "right";
+  });
+  // The wrapper also aligns unwrapped text nodes, which are common in simple Outlook drafts.
+  return `<div dir="rtl" style="text-align: right;">${documentFragment.body.innerHTML}</div>`;
+}
 function setSubject(value) {
   return new Promise((resolve, reject) => Office.context.mailbox.item.subject.setAsync(value, (result) => {
     result.status === Office.AsyncResultStatus.Succeeded ? resolve() : reject(result.error);
@@ -115,7 +127,7 @@ async function translateDraft() {
     const [subject, bodyHtml] = await Promise.all([getSubject(), getBody()]);
     const { translatableHtml, preservedTailHtml } = splitPreservedTail(bodyHtml);
     const data = await postJson("/api/translate", { subject, bodyHtml: translatableHtml, recipientGender, direction: $("#direction").value }, "Translation");
-    data.translatedBodyHtml += preservedTailHtml;
+    data.translatedBodyHtml = alignTranslatedBody(data.translatedBodyHtml, direction) + preservedTailHtml;
     translated = data;
     $("#english-subject-label").textContent = "Suggested subject (English)";
     $("#translated-subject-group").hidden = false;
