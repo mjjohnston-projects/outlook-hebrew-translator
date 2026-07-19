@@ -25,7 +25,7 @@ function setRequestState(button, busy) {
 async function postJson(url, payload, actionName) {
   const controller = new AbortController();
   activeRequest = controller;
-  const timeout = window.setTimeout(() => controller.abort(), 90000);
+  const timeout = window.setTimeout(() => controller.abort(), 130000);
   try {
     const response = await fetch(url, {
       method: "POST",
@@ -40,7 +40,7 @@ async function postJson(url, payload, actionName) {
     if (!response.ok) throw new Error(data.error || `${actionName} failed.`);
     return data;
   } catch (error) {
-    if (error.name === "AbortError") throw new Error(`${actionName} took longer than 90 seconds. Check that the Email Language Assistant service is running, then try again.`);
+    if (error.name === "AbortError") throw new Error(`${actionName} took longer than two minutes. Check that the Email Language Assistant service is running, then try again.`);
     throw error;
   } finally {
     window.clearTimeout(timeout);
