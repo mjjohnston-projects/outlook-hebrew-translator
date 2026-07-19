@@ -17,7 +17,7 @@ The add-in can also proofread an English, Hebrew, or Russian draft. Choose the p
 
 ## Run locally
 
-Prerequisites: Node.js 20+ and an OpenAI API key. The default model is `gpt-5-nano`, selected for low-cost translation and proofreading.
+Prerequisites: Node.js 20+ and an OpenAI API key. The default model is `gpt-4.1-nano`, selected for fast, low-cost translation and proofreading.
 
 ```powershell
 cd C:\Users\michaeljo1\Documents\Codex\2026-07-16\i-wou\outputs\outlook-email-language-assistant

@@ -8,6 +8,12 @@ import devCerts from "office-addin-dev-certs";
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
+app.use((req, res, next) => {
+  if (!req.path.startsWith("/api/")) return next();
+  const started = Date.now();
+  res.on("finish", () => console.log(`${req.method} ${req.path} ${res.statusCode} ${Date.now() - started}ms`));
+  next();
+});
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static("public"));
 // One retry absorbs a transient network timeout without requiring the Outlook user to repeat the action.
