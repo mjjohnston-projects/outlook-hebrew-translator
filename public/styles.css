@@ -1,3 +1,4 @@
+html { color-scheme: light dark; }
 * { box-sizing: border-box; }
 body { margin: 0; background: #f7f7f7; color: #1f1f1f; font: 14px/1.45 system-ui, sans-serif; }
 main { padding: 18px; max-width: 680px; margin: auto; }
@@ -20,3 +21,21 @@ select { width: 100%; margin: 5px 0 14px; border: 1px solid #bbb; border-radius:
 #translated-body, #translated-subject { width: 100%; margin: 5px 0 14px; border: 1px solid #bbb; border-radius: 4px; padding: 9px; background: white; font: inherit; }
 #translated-body { min-height: 140px; white-space: normal; overflow-wrap: anywhere; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Outlook's task-pane webview follows the Windows/Outlook color preference. */
+@media (prefers-color-scheme: dark) {
+  body { background: #1f1f1f; color: #f3f2f1; }
+  .intro { color: #c8c6c4; }
+  button { border-color: #5b9bd5; color: #8ec5ff; background: #292929; }
+  button.primary, #translate { color: #fff; background: #0f6cbd; border-color: #5b9bd5; }
+  button:hover:not(:disabled) { background: #333; }
+  button.primary:hover:not(:disabled), #translate:hover:not(:disabled) { background: #115ea3; }
+  textarea, select, #translated-body, #translated-subject {
+    color: #f3f2f1;
+    background: #292929;
+    border-color: #666;
+  }
+  select option { color: #f3f2f1; background: #292929; }
+  input[type="radio"] { accent-color: #5b9bd5; }
+  #status { color: #ffb4ab; }
+}
