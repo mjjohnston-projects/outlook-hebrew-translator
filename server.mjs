@@ -88,6 +88,10 @@ app.post("/api/translate", async (req, res) => {
   const target = direction === "en-he" ? "Hebrew" : direction === "en-ru" ? "Russian" : "English";
   const source = direction === "he-en" ? "Hebrew" : "English";
   const genderInstruction = direction === "he-en" ? "No recipient gender selection is needed for an English translation." : recipientInstructions[recipientGender];
+  // Outlook can add a large amount of Word/Office markup. Remove that noise before calling the model,
+  // while retaining the email content and common visual formatting that the add-in supports.
+  const cleanedBodyHtml = sanitizeEmailHtml(bodyHtml || "");
+  console.log(`Translation input: ${String(bodyHtml || "").length} HTML chars, reduced to ${cleanedBodyHtml.length} chars.`);
 
   try {
     const completion = await client.chat.completions.create({
@@ -102,7 +106,7 @@ Translate the email body into ${target}. Preserve the input HTML structure exact
         },
         {
           role: "user",
-          content: JSON.stringify({ subject: subject || "", bodyHtml: bodyHtml || "" })
+          content: JSON.stringify({ subject: subject || "", bodyHtml: cleanedBodyHtml })
         }
       ]
     });
@@ -132,6 +136,8 @@ app.post("/api/proofread", async (req, res) => {
   if (!subject && !bodyHtml) return res.status(400).json({ error: "Write an email before proofreading it." });
   if (!["English", "Hebrew", "Russian"].includes(language)) return res.status(400).json({ error: "Choose English, Hebrew, or Russian." });
   if (!process.env.OPENAI_API_KEY || !process.env.OPENAI_MODEL) return res.status(500).json({ error: "The server is missing OPENAI_API_KEY or OPENAI_MODEL." });
+  const cleanedBodyHtml = sanitizeEmailHtml(bodyHtml || "");
+  console.log(`Proofreading input: ${String(bodyHtml || "").length} HTML chars, reduced to ${cleanedBodyHtml.length} chars.`);
 
   try {
     const client = createOpenAiClient();
@@ -140,7 +146,7 @@ app.post("/api/proofread", async (req, res) => {
       response_format: { type: "json_schema", json_schema: proofreadSchema },
       messages: [
         { role: "system", content: `You are a meticulous ${language} business-email proofreader. Return only JSON that satisfies the schema. Correct only spelling, grammar, punctuation, capitalization, and obvious typographical mistakes in the subject and body. Do not translate, change the email's meaning or tone, rewrite sentences for style, add content, remove content, or add commentary. Preserve the input HTML structure exactly where possible: keep every hyperlink href, all font family, font size, color, bold/italic/underline styling, and all paragraph, line-break, list, and table boundaries.` },
-        { role: "user", content: JSON.stringify({ subject: subject || "", bodyHtml: bodyHtml || "" }) }
+        { role: "user", content: JSON.stringify({ subject: subject || "", bodyHtml: cleanedBodyHtml }) }
       ]
     });
     const content = completion.choices[0]?.message?.content;
