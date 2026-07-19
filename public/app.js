@@ -1,4 +1,5 @@
 let translated = null;
+let activeRequest = null;
 const $ = (selector) => document.querySelector(selector);
 
 Office.onReady((info) => {
@@ -15,6 +16,37 @@ Office.onReady((info) => {
 });
 
 function showStatus(message = "") { $("#status").textContent = message; }
+function setRequestState(button, busy) {
+  $("#translate").disabled = busy;
+  $("#proofread").disabled = busy;
+  if (!busy) button.disabled = false;
+}
+
+async function postJson(url, payload, actionName) {
+  const controller = new AbortController();
+  activeRequest = controller;
+  const timeout = window.setTimeout(() => controller.abort(), 90000);
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+    const text = await response.text();
+    let data;
+    try { data = text ? JSON.parse(text) : {}; }
+    catch { throw new Error(`${actionName} returned an invalid response from the local server.`); }
+    if (!response.ok) throw new Error(data.error || `${actionName} failed.`);
+    return data;
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error(`${actionName} took longer than 90 seconds. Check that the Email Language Assistant service is running, then try again.`);
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+    if (activeRequest === controller) activeRequest = null;
+  }
+}
 function getGender() { return document.querySelector('input[name="gender"]:checked')?.value; }
 const recipientLabels = { man: "Man", woman: "Woman", men: "Men", women: "Women" };
 const directions = {
@@ -56,16 +88,12 @@ async function translateDraft() {
   const direction = currentDirection();
   if (direction.needsRecipientForm && !recipientGender) return showStatus("Choose who is being addressed first.");
   const button = $("#translate");
-  button.disabled = true;
+  if (activeRequest) return showStatus("Another request is already in progress.");
+  setRequestState(button, true);
   showStatus("Reading and translating your draft…");
   try {
     const [subject, bodyHtml] = await Promise.all([getSubject(), getBody()]);
-    const response = await fetch("/api/translate", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subject, bodyHtml, recipientGender, direction: $("#direction").value })
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Translation failed.");
+    const data = await postJson("/api/translate", { subject, bodyHtml, recipientGender, direction: $("#direction").value }, "Translation");
     translated = data;
     $("#english-subject-label").textContent = "Suggested subject (English)";
     $("#translated-subject-group").hidden = false;
@@ -81,22 +109,18 @@ async function translateDraft() {
     showStatus("");
   } catch (error) {
     showStatus(error.message || "Unable to translate this draft.");
-  } finally { button.disabled = false; }
+  } finally { setRequestState(button, false); }
 }
 
 async function proofreadDraft() {
   const language = $("#proofread-language").value;
   const button = $("#proofread");
-  button.disabled = true;
+  if (activeRequest) return showStatus("Another request is already in progress.");
+  setRequestState(button, true);
   showStatus("Checking spelling and grammar…");
   try {
     const [subject, bodyHtml] = await Promise.all([getSubject(), getBody()]);
-    const response = await fetch("/api/proofread", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subject, bodyHtml, language })
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Proofreading failed.");
+    const data = await postJson("/api/proofread", { subject, bodyHtml, language }, "Proofreading");
     translated = { translatedSubject: data.subject, translatedBodyHtml: data.bodyHtml };
     $("#gender-label").textContent = `Spelling & grammar: ${language}`;
     $("#english-subject-label").textContent = "Corrected subject — ready to copy";
@@ -111,7 +135,7 @@ async function proofreadDraft() {
     showStatus("");
   } catch (error) {
     showStatus(error.message || "Unable to proofread this draft.");
-  } finally { button.disabled = false; }
+  } finally { setRequestState(button, false); }
 }
 
 async function copyText(value) {

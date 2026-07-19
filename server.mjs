@@ -10,6 +10,7 @@ const app = express();
 const port = Number(process.env.PORT || 3000);
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static("public"));
+const createOpenAiClient = () => new OpenAI({ apiKey: process.env.OPENAI_API_KEY, timeout: 85000, maxRetries: 0 });
 
 const responseSchema = {
   name: "outlook_hebrew_translation",
@@ -58,7 +59,7 @@ app.post("/api/translate", async (req, res) => {
     return res.status(500).json({ error: "The server is missing OPENAI_API_KEY or OPENAI_MODEL." });
   }
 
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const client = createOpenAiClient();
   const recipientInstructions = {
     man: "The email addresses one man. Use masculine singular Hebrew forms whenever addressing the recipient.",
     woman: "The email addresses one woman. Use feminine singular Hebrew forms whenever addressing the recipient.",
@@ -114,7 +115,7 @@ app.post("/api/proofread", async (req, res) => {
   if (!process.env.OPENAI_API_KEY || !process.env.OPENAI_MODEL) return res.status(500).json({ error: "The server is missing OPENAI_API_KEY or OPENAI_MODEL." });
 
   try {
-    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const client = createOpenAiClient();
     const completion = await client.chat.completions.create({
       model: process.env.OPENAI_MODEL,
       response_format: { type: "json_schema", json_schema: proofreadSchema },
