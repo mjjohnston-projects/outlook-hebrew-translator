@@ -73,14 +73,23 @@ function getBody() {
   }));
 }
 
-function splitOutlookSignature(bodyHtml) {
-  // Outlook commonly wraps an inserted signature in an element whose id, class, or data attribute includes "signature".
-  // Keep that complete tail out of the AI request so it is written back exactly as Outlook created it.
-  const match = /<(?:div|p|table|span)\b[^>]*(?:\bid|\bclass|\bdata-[\w-]*signature[\w-]*)\s*=\s*["'][^"']*signature[^"']*["'][^>]*>/i.exec(bodyHtml);
-  if (!match || match.index === undefined) return { translatableHtml: bodyHtml, signatureHtml: "" };
+function splitPreservedTail(bodyHtml) {
+  // Preserve Outlook's signature and quoted reply/forward history exactly as Outlook created them.
+  // The first matching marker begins the unchanged tail of the draft.
+  const markers = [
+    /<(?:div|p|table|span)\b[^>]*(?:\bid|\bclass|\bdata-[\w-]*signature[\w-]*)\s*=\s*["'][^"']*signature[^"']*["'][^>]*>/i,
+    /<div\b[^>]*\bid\s*=\s*["']divRplyFwdMsg["'][^>]*>/i,
+    /<blockquote\b/i,
+    /<hr\b[^>]*>[\s\S]{0,800}?(?:<\/?\w+[^>]*>\s*)*(?:From|Sent|To|Subject)\s*:/i
+  ];
+  const starts = markers
+    .map((marker) => marker.exec(bodyHtml)?.index)
+    .filter((index) => index !== undefined);
+  const tailStart = starts.length ? Math.min(...starts) : undefined;
+  if (tailStart === undefined) return { translatableHtml: bodyHtml, preservedTailHtml: "" };
   return {
-    translatableHtml: bodyHtml.slice(0, match.index),
-    signatureHtml: bodyHtml.slice(match.index)
+    translatableHtml: bodyHtml.slice(0, tailStart),
+    preservedTailHtml: bodyHtml.slice(tailStart)
   };
 }
 function setSubject(value) {
@@ -104,9 +113,9 @@ async function translateDraft() {
   showStatus("Reading and translating your draft…");
   try {
     const [subject, bodyHtml] = await Promise.all([getSubject(), getBody()]);
-    const { translatableHtml, signatureHtml } = splitOutlookSignature(bodyHtml);
+    const { translatableHtml, preservedTailHtml } = splitPreservedTail(bodyHtml);
     const data = await postJson("/api/translate", { subject, bodyHtml: translatableHtml, recipientGender, direction: $("#direction").value }, "Translation");
-    data.translatedBodyHtml += signatureHtml;
+    data.translatedBodyHtml += preservedTailHtml;
     translated = data;
     $("#english-subject-label").textContent = "Suggested subject (English)";
     $("#translated-subject-group").hidden = false;
