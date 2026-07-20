@@ -99,8 +99,8 @@ function alignTranslatedBody(bodyHtml, direction) {
   // Set the font on every translated element so Outlook does not retain the original
   // English font from a nested span or paragraph when the HTML is pasted/applied.
   documentFragment.body.querySelectorAll("*").forEach((element) => {
-    element.style.fontFamily = "'Aptos (Body)', Aptos, sans-serif";
-    if (element.tagName === "FONT") element.setAttribute("face", "Aptos (Body)");
+    element.style.fontFamily = "Arial, sans-serif";
+    if (element.tagName === "FONT") element.setAttribute("face", "Arial");
   });
   documentFragment.body.querySelectorAll("p, div, li, td, th, blockquote, table").forEach((element) => {
     element.dir = "rtl";
@@ -108,7 +108,7 @@ function alignTranslatedBody(bodyHtml, direction) {
     if (!alignment || alignment === "left") element.style.textAlign = "right";
   });
   // The wrapper also aligns unwrapped text nodes, which are common in simple Outlook drafts.
-  return `<div dir="rtl" style="text-align: right; font-family: 'Aptos (Body)', Aptos, sans-serif;">${documentFragment.body.innerHTML}</div>`;
+  return `<div dir="rtl" style="text-align: right; font-family: Arial, sans-serif;">${documentFragment.body.innerHTML}</div>`;
 }
 function setSubject(value) {
   return new Promise((resolve, reject) => Office.context.mailbox.item.subject.setAsync(value, (result) => {
