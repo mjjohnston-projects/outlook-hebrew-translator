@@ -17,17 +17,21 @@ The add-in can also proofread an English, Hebrew, or Russian draft. Choose the p
 
 ## Run locally
 
-Prerequisites: Node.js 20+ and an OpenAI API key. The default model is `gpt-4.1-mini`, selected for fast, capable translation and proofreading.
+Prerequisites: Node.js 20+ and a GitHub personal access token with **Models: Read** permission. The default provider is GitHub Models with `openai/gpt-4.1-mini`, selected for fast, capable translation and proofreading. GitHub Models has a free, rate-limited tier; paid usage is optional.
 
 ```powershell
 # Run this from the folder that contains package.json.
 $HOME_DIR = (Resolve-Path .).Path
 Set-Location $HOME_DIR
 Copy-Item .env.example .env
-# Edit .env and set OPENAI_API_KEY and OPENAI_MODEL.
+# Edit .env and set GITHUB_MODELS_TOKEN. Do not share this value.
 npm install
 npm run dev
 ```
+
+To create the token, open GitHub **Settings** → **Developer settings** → **Personal access tokens** → **Fine-grained tokens**, create a token with **Models: Read**, then paste it only into `GITHUB_MODELS_TOKEN` in your local `.env` file. The sample configuration uses `openai/gpt-4.1-mini`, which is in GitHub Models' low free-rate-limit tier.
+
+To revert to your existing OpenAI API account later, set `LLM_PROVIDER=openai` and configure `OPENAI_API_KEY` and `OPENAI_MODEL` in `.env`.
 
 The add-in must be hosted over HTTPS for Outlook. For this personal Windows setup, use `https://localhost:3000` with a trusted development certificate, then sideload `manifest.xml` in Outlook.
 
@@ -39,7 +43,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\set-manifest-url.p
 
 ## Deploy
 
-Deploy this app to any HTTPS-capable Node host. Set `OPENAI_API_KEY` and `OPENAI_MODEL` as server secrets, set `PUBLIC_ORIGIN` to the deployed HTTPS origin, replace `YOUR-HTTPS-DOMAIN` in the manifest, then distribute the manifest through Microsoft 365 admin integrated apps or sideload it for individual users.
+Deploy this app to any HTTPS-capable Node host. Set `LLM_PROVIDER`, `GITHUB_MODELS_TOKEN`, and `GITHUB_MODELS_MODEL` as server secrets (or use the documented OpenAI fallback), set `PUBLIC_ORIGIN` to the deployed HTTPS origin, replace `YOUR-HTTPS-DOMAIN` in the manifest, then distribute the manifest through Microsoft 365 admin integrated apps or sideload it for individual users.
 
 ## Start with Windows
 

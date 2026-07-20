@@ -17,7 +17,66 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static("public"));
 // One retry absorbs a transient network timeout without requiring the Outlook user to repeat the action.
-const createOpenAiClient = () => new OpenAI({ apiKey: process.env.OPENAI_API_KEY, timeout: 60000, maxRetries: 1 });
+const createLlmProvider = () => {
+  const selectedProvider = (process.env.LLM_PROVIDER || "openai").trim().toLowerCase();
+
+  if (selectedProvider === "github-models") {
+    const apiKey = process.env.GITHUB_MODELS_TOKEN;
+    const model = process.env.GITHUB_MODELS_MODEL;
+    if (!apiKey || !model) {
+      return { error: "The server is missing GITHUB_MODELS_TOKEN or GITHUB_MODELS_MODEL." };
+    }
+
+    return {
+      name: "GitHub Models",
+      apiKeyName: "GITHUB_MODELS_TOKEN",
+      model,
+      client: new OpenAI({
+        apiKey,
+        baseURL: "https://models.github.ai/inference",
+        defaultHeaders: {
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2026-03-10"
+        },
+        timeout: 60000,
+        maxRetries: 1
+      })
+    };
+  }
+
+  if (selectedProvider === "openai") {
+    const apiKey = process.env.OPENAI_API_KEY;
+    const model = process.env.OPENAI_MODEL;
+    if (!apiKey || !model) {
+      return { error: "The server is missing OPENAI_API_KEY or OPENAI_MODEL." };
+    }
+
+    return {
+      name: "OpenAI",
+      apiKeyName: "OPENAI_API_KEY",
+      model,
+      client: new OpenAI({ apiKey, timeout: 60000, maxRetries: 1 })
+    };
+  }
+
+  return { error: "LLM_PROVIDER must be either 'github-models' or 'openai'." };
+};
+
+const providerErrorMessage = (error, provider) => {
+  const status = Number(error?.status) || 502;
+  const providerMessage = typeof error?.message === "string" ? error.message : "Unknown provider error.";
+  const label = provider?.name || "Translation provider";
+  const keyName = provider?.apiKeyName || "provider API key";
+  const modelName = provider?.name === "GitHub Models" ? "GITHUB_MODELS_MODEL" : "OPENAI_MODEL";
+  const guidance = status === 401
+    ? `${label} authentication failed. Check ${keyName} in .env.`
+    : status === 404
+      ? `The configured ${modelName} is unavailable to ${label}.`
+      : status === 429
+        ? `${label} has reached a rate or usage limit. Try again later, or review its billing settings.`
+        : `Translation provider error: ${providerMessage}`;
+  return { status: status >= 400 && status < 600 ? status : 502, guidance };
+};
 
 const responseSchema = {
   name: "outlook_hebrew_translation",
@@ -74,11 +133,8 @@ app.post("/api/translate", async (req, res) => {
   if (direction !== "he-en" && !["man", "woman", "men", "women"].includes(recipientGender)) {
     return res.status(400).json({ error: "Select who is being addressed." });
   }
-  if (!process.env.OPENAI_API_KEY || !process.env.OPENAI_MODEL) {
-    return res.status(500).json({ error: "The server is missing OPENAI_API_KEY or OPENAI_MODEL." });
-  }
-
-  const client = createOpenAiClient();
+  const provider = createLlmProvider();
+  if (provider.error) return res.status(500).json({ error: provider.error });
   const recipientInstructions = {
     man: "The email addresses one man. Use masculine singular Hebrew forms whenever addressing the recipient.",
     woman: "The email addresses one woman. Use feminine singular Hebrew forms whenever addressing the recipient.",
@@ -94,8 +150,8 @@ app.post("/api/translate", async (req, res) => {
   console.log(`Translation input: ${String(bodyHtml || "").length} HTML chars, reduced to ${cleanedBodyHtml.length} chars.`);
 
   try {
-    const completion = await client.chat.completions.create({
-      model: process.env.OPENAI_MODEL,
+    const completion = await provider.client.chat.completions.create({
+      model: provider.model,
       response_format: { type: "json_schema", json_schema: responseSchema },
       messages: [
         {
@@ -118,16 +174,8 @@ Translate the email body into ${target}. Preserve the input HTML structure exact
     res.json(translated);
   } catch (error) {
     console.error(error);
-    const status = Number(error?.status) || 502;
-    const providerMessage = typeof error?.message === "string" ? error.message : "Unknown provider error.";
-    const guidance = status === 401
-      ? "OpenAI authentication failed. Check OPENAI_API_KEY in .env."
-      : status === 404
-        ? "The configured OPENAI_MODEL is unavailable to this API project."
-        : status === 429
-          ? "The OpenAI project has reached a usage limit or needs billing enabled."
-          : `Translation provider error: ${providerMessage}`;
-    res.status(status >= 400 && status < 600 ? status : 502).json({ error: guidance });
+    const { status, guidance } = providerErrorMessage(error, provider);
+    res.status(status).json({ error: guidance });
   }
 });
 
@@ -135,14 +183,14 @@ app.post("/api/proofread", async (req, res) => {
   const { subject, bodyHtml, language } = req.body || {};
   if (!subject && !bodyHtml) return res.status(400).json({ error: "Write an email before proofreading it." });
   if (!["English", "Hebrew", "Russian"].includes(language)) return res.status(400).json({ error: "Choose English, Hebrew, or Russian." });
-  if (!process.env.OPENAI_API_KEY || !process.env.OPENAI_MODEL) return res.status(500).json({ error: "The server is missing OPENAI_API_KEY or OPENAI_MODEL." });
+  const provider = createLlmProvider();
+  if (provider.error) return res.status(500).json({ error: provider.error });
   const cleanedBodyHtml = sanitizeEmailHtml(bodyHtml || "");
   console.log(`Proofreading input: ${String(bodyHtml || "").length} HTML chars, reduced to ${cleanedBodyHtml.length} chars.`);
 
   try {
-    const client = createOpenAiClient();
-    const completion = await client.chat.completions.create({
-      model: process.env.OPENAI_MODEL,
+    const completion = await provider.client.chat.completions.create({
+      model: provider.model,
       response_format: { type: "json_schema", json_schema: proofreadSchema },
       messages: [
         { role: "system", content: `You are a meticulous ${language} business-email proofreader. Return only JSON that satisfies the schema. Correct only spelling, grammar, punctuation, capitalization, and obvious typographical mistakes in the subject and body. Do not translate, change the email's meaning or tone, rewrite sentences for style, add content, remove content, or add commentary. Preserve the input HTML structure exactly where possible: keep every hyperlink href, all font family, font size, color, bold/italic/underline styling, and all paragraph, line-break, list, and table boundaries.` },
@@ -156,13 +204,8 @@ app.post("/api/proofread", async (req, res) => {
     res.json(corrected);
   } catch (error) {
     console.error(error);
-    const status = Number(error?.status) || 502;
-    const providerMessage = typeof error?.message === "string" ? error.message : "Unknown provider error.";
-    const guidance = status === 401 ? "OpenAI authentication failed. Check OPENAI_API_KEY in .env."
-      : status === 404 ? "The configured OPENAI_MODEL is unavailable to this API project."
-      : status === 429 ? "The OpenAI project has reached a usage limit or needs billing enabled."
-      : `Proofreading provider error: ${providerMessage}`;
-    res.status(status >= 400 && status < 600 ? status : 502).json({ error: guidance });
+    const { status, guidance } = providerErrorMessage(error, provider);
+    res.status(status).json({ error: guidance.replace("Translation provider error", "Proofreading provider error") });
   }
 });
 
