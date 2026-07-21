@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0" xmlns:mailappor="http://schemas.microsoft.com/office/mailappversionoverrides/1.0" xsi:type="MailApp">
   <Id>bdc4bba9-066f-4b42-a6bc-df9ea1d0c4af</Id>
-  <Version>1.0.0.3</Version>
+  <Version>1.0.0.4</Version>
   <ProviderName>Michael</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="Email Language Assistant"/>
@@ -80,7 +80,7 @@
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="GroupLabel" DefaultValue="Translate"/>
-        <bt:String id="ButtonLabel" DefaultValue="Email Language Assistant"/>
+        <bt:String id="ButtonLabel" DefaultValue="Language Assistant"/>
       </bt:ShortStrings>
       <bt:LongStrings>
         <bt:String id="ButtonTip" DefaultValue="Translate or proofread this email draft."/>
