@@ -5,15 +5,17 @@ An Outlook compose add-in that translates English drafts into Hebrew or Russian,
 ## What it does
 
 1. Open a new email or reply in Outlook and select **Email Language Assistant**.
-2. Choose **English → Hebrew**, **English → Russian**, or **Hebrew → English**.
+2. Choose **English â†’ Hebrew**, **English â†’ Russian**, or **Hebrew â†’ English**.
 3. When translating to Hebrew or Russian, choose **Man**, **Woman**, **Men**, or **Women** for the person or people being addressed. The target-language agreement follows the selection.
 4. Select **Translate draft**.
 4. Review the result. Each response starts with the selected gender, then shows the English subject suggestion, Hebrew subject, and the Hebrew body.
 5. Use **Apply Hebrew subject & body** to replace the draft, or copy either field.
 
-`Regards, Michael` is explicitly rendered as `בברכה, מייקל`.
+`Regards, Michael` is explicitly rendered as `×‘×‘×¨×›×”, ×ž×™×™×§×œ`.
 
 The add-in can also proofread an English, Hebrew, or Russian draft. Choose the proofread language, then select **Check spelling & grammar**. It corrects spelling, grammar, punctuation, capitalization, and clear typos without translating or rewriting the email.
+
+If Hebrew was typed while the keyboard was accidentally set to English, select **Fix Hebrew keyboard layout**. This locally converts the editable subject and body using the standard English-to-Hebrew keyboard mapping; it does not use the AI provider and leaves links, signatures, and quoted email history unchanged.
 
 ## Run locally
 
@@ -29,7 +31,7 @@ npm install
 npm run dev
 ```
 
-To create the token, open GitHub **Settings** → **Developer settings** → **Personal access tokens** → **Fine-grained tokens**, create a token with **Models: Read**, then paste it only into `GITHUB_MODELS_TOKEN` in your local `.env` file. The sample configuration uses `openai/gpt-4.1-mini`, which is in GitHub Models' low free-rate-limit tier.
+To create the token, open GitHub **Settings** â†’ **Developer settings** â†’ **Personal access tokens** â†’ **Fine-grained tokens**, create a token with **Models: Read**, then paste it only into `GITHUB_MODELS_TOKEN` in your local `.env` file. The sample configuration uses `openai/gpt-4.1-mini`, which is in GitHub Models' low free-rate-limit tier.
 
 To revert to your existing OpenAI API account later, set `LLM_PROVIDER=openai` and configure `OPENAI_API_KEY` and `OPENAI_MODEL` in `.env`.
 
