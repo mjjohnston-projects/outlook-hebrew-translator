@@ -8,6 +8,7 @@ Office.onReady((info) => {
     return;
   }
   $("#translate").addEventListener("click", translateDraft);
+  $("#keyboard-hebrew").addEventListener("click", fixHebrewKeyboardLayout);
   $("#proofread").addEventListener("click", proofreadDraft);
   $("#direction").addEventListener("change", updateDirectionUi);
   $("#copy-subject").addEventListener("click", () => copyText($("#translated-subject").value));
@@ -18,6 +19,7 @@ Office.onReady((info) => {
 function showStatus(message = "") { $("#status").textContent = message; }
 function setRequestState(button, busy) {
   $("#translate").disabled = busy;
+  $("#keyboard-hebrew").disabled = busy;
   $("#proofread").disabled = busy;
   if (!busy) button.disabled = false;
 }
@@ -93,6 +95,43 @@ function splitPreservedTail(bodyHtml) {
   };
 }
 
+// Standard Israeli Hebrew keyboard mapping. This repairs text typed while the
+// user intended Hebrew but Windows/Outlook was set to the English layout.
+const hebrewKeyboardMap = Object.freeze({
+  q: "/", w: "'", e: "×§", r: "×¨", t: "×", y: "×˜", u: "×•", i: "×Ÿ", o: "×", p: "×¤", "[": "]", "]": "[",
+  a: "×©", s: "×“", d: "×’", f: "×›", g: "×¢", h: "×™", j: "×—", k: "×œ", l: "×š", ";": "×£", "'": ",",
+  z: "×–", x: "×¡", c: "×‘", v: "×”", b: "× ", n: "×ž", m: "×¦", ",": "×ª", ".": "×¥", "/": "."
+});
+const protectedEmailTokens = /(?:https?:\/\/[^\s<]+|www\.[^\s<]+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})/gi;
+
+function convertKeyboardSegment(value) {
+  return Array.from(value, (character) => hebrewKeyboardMap[character.toLowerCase()] || character).join("");
+}
+
+function convertKeyboardText(value) {
+  let converted = "";
+  let cursor = 0;
+  for (const match of value.matchAll(protectedEmailTokens)) {
+    converted += convertKeyboardSegment(value.slice(cursor, match.index));
+    converted += match[0];
+    cursor = match.index + match[0].length;
+  }
+  return converted + convertKeyboardSegment(value.slice(cursor));
+}
+
+function convertKeyboardHtml(bodyHtml) {
+  const documentFragment = new DOMParser().parseFromString(bodyHtml, "text/html");
+  const walker = documentFragment.createTreeWalker(documentFragment.body, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  while (walker.nextNode()) textNodes.push(walker.currentNode);
+  textNodes.forEach((textNode) => {
+    // URLs and their displayed text stay unchanged, just like normal translation.
+    if (textNode.parentElement?.closest("a")) return;
+    textNode.nodeValue = convertKeyboardText(textNode.nodeValue || "");
+  });
+  return documentFragment.body.innerHTML;
+}
+
 function alignTranslatedBody(bodyHtml, direction) {
   if (direction.dir !== "rtl") return bodyHtml;
   const documentFragment = new DOMParser().parseFromString(bodyHtml, "text/html");
@@ -121,6 +160,38 @@ function setBody(value) {
   }));
 }
 
+async function fixHebrewKeyboardLayout() {
+  const button = $("#keyboard-hebrew");
+  if (activeRequest) return showStatus("Another request is already in progress.");
+  setRequestState(button, true);
+  showStatus("Reading and fixing the Hebrew keyboard layoutâ€¦");
+  try {
+    const [subject, bodyHtml] = await Promise.all([getSubject(), getBody()]);
+    const { translatableHtml, preservedTailHtml } = splitPreservedTail(bodyHtml);
+    const correctedSubject = convertKeyboardText(subject || "");
+    const correctedTranslatableHtml = convertKeyboardHtml(translatableHtml);
+    if (correctedSubject === (subject || "") && correctedTranslatableHtml === translatableHtml) {
+      return showStatus("No English-keyboard Hebrew text was found in the editable part of this draft.");
+    }
+    const correctedBodyHtml = alignTranslatedBody(correctedTranslatableHtml, directions["en-he"]) + preservedTailHtml;
+    translated = { translatedSubject: correctedSubject, translatedBodyHtml: correctedBodyHtml };
+    $("#gender-label").textContent = "Hebrew keyboard layout corrected";
+    $("#english-subject-label").textContent = "Original subject (typed with English keyboard)";
+    $("#english-subject").value = subject || "";
+    $("#translated-subject-group").hidden = false;
+    $("#translated-subject-label").textContent = "Hebrew subject â€” ready to copy";
+    $("#translated-body-label").textContent = "Hebrew email body â€” ready to copy";
+    $("#translated-subject").value = correctedSubject;
+    $("#translated-subject").dir = "rtl"; $("#translated-subject").lang = "he";
+    $("#translated-body").innerHTML = correctedBodyHtml;
+    $("#translated-body").dir = "rtl"; $("#translated-body").lang = "he";
+    $("#result").hidden = false;
+    showStatus("");
+  } catch (error) {
+    showStatus(error.message || "Unable to fix the Hebrew keyboard layout.");
+  } finally { setRequestState(button, false); }
+}
+
 async function translateDraft() {
   const recipientGender = getGender();
   const direction = currentDirection();
@@ -128,7 +199,7 @@ async function translateDraft() {
   const button = $("#translate");
   if (activeRequest) return showStatus("Another request is already in progress.");
   setRequestState(button, true);
-  showStatus("Reading and translating your draft…");
+  showStatus("Reading and translating your draftâ€¦");
   try {
     const [subject, bodyHtml] = await Promise.all([getSubject(), getBody()]);
     const { translatableHtml, preservedTailHtml } = splitPreservedTail(bodyHtml);
@@ -139,8 +210,8 @@ async function translateDraft() {
     $("#translated-subject-group").hidden = false;
     $("#gender-label").textContent = direction.needsRecipientForm ? `Recipient: ${recipientLabels[recipientGender]}` : "Translation: Hebrew to English";
     $("#english-subject").value = data.englishSubject;
-    $("#translated-subject-label").textContent = `${direction.label} subject — ready to copy`;
-    $("#translated-body-label").textContent = `${direction.label} email body — ready to copy`;
+    $("#translated-subject-label").textContent = `${direction.label} subject â€” ready to copy`;
+    $("#translated-body-label").textContent = `${direction.label} email body â€” ready to copy`;
     $("#translated-subject").value = data.translatedSubject;
     $("#translated-subject").dir = direction.dir; $("#translated-subject").lang = direction.language;
     $("#translated-body").innerHTML = data.translatedBodyHtml;
@@ -157,16 +228,16 @@ async function proofreadDraft() {
   const button = $("#proofread");
   if (activeRequest) return showStatus("Another request is already in progress.");
   setRequestState(button, true);
-  showStatus("Checking spelling and grammar…");
+  showStatus("Checking spelling and grammarâ€¦");
   try {
     const [subject, bodyHtml] = await Promise.all([getSubject(), getBody()]);
     const data = await postJson("/api/proofread", { subject, bodyHtml, language }, "Proofreading");
     translated = { translatedSubject: data.subject, translatedBodyHtml: data.bodyHtml };
     $("#gender-label").textContent = `Spelling & grammar: ${language}`;
-    $("#english-subject-label").textContent = "Corrected subject — ready to copy";
+    $("#english-subject-label").textContent = "Corrected subject â€” ready to copy";
     $("#english-subject").value = data.subject;
     $("#translated-subject-group").hidden = true;
-    $("#translated-body-label").textContent = "Corrected email body — ready to copy";
+    $("#translated-body-label").textContent = "Corrected email body â€” ready to copy";
     $("#translated-body").innerHTML = data.bodyHtml;
     const isHebrew = language === "Hebrew";
     $("#translated-body").dir = isHebrew ? "rtl" : "ltr";
@@ -192,7 +263,7 @@ async function copyBody() {
 }
 async function applyTranslation() {
   if (!translated) return;
-  const button = $("#apply"); button.disabled = true; showStatus("Applying translation to the draft…");
+  const button = $("#apply"); button.disabled = true; showStatus("Applying translation to the draftâ€¦");
   try {
     await Promise.all([setSubject(translated.translatedSubject), setBody(translated.translatedBodyHtml)]);
     showStatus("Applied. Review the email, then send it when ready.");
