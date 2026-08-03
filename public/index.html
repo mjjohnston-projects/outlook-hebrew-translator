@@ -14,9 +14,9 @@
       <p class="intro">Translate the current email draft.</p>
       <label for="direction">Translation direction</label>
       <select id="direction">
-        <option value="en-he">English → Hebrew</option>
-        <option value="en-ru">English → Russian</option>
-        <option value="he-en">Hebrew → English</option>
+        <option value="en-he">English â†’ Hebrew</option>
+        <option value="en-ru">English â†’ Russian</option>
+        <option value="he-en">Hebrew â†’ English</option>
       </select>
       <fieldset id="recipient-form">
         <legend>Who is being addressed?</legend>
@@ -28,6 +28,10 @@
         </div>
       </fieldset>
       <button id="translate" type="button">Translate draft</button>
+      <section class="keyboard-layout">
+        <p>Typed Hebrew while your keyboard was set to English?</p>
+        <button id="keyboard-hebrew" type="button">Fix Hebrew keyboard layout</button>
+      </section>
       <section class="proofread">
         <label for="proofread-language">Or proofread this email in</label>
         <select id="proofread-language">
@@ -43,10 +47,10 @@
         <label id="english-subject-label" for="english-subject">Suggested subject (English)</label>
         <textarea id="english-subject" rows="2" readonly></textarea>
         <div id="translated-subject-group">
-          <label id="translated-subject-label" for="translated-subject">Hebrew subject — ready to copy</label>
+          <label id="translated-subject-label" for="translated-subject">Hebrew subject â€” ready to copy</label>
           <textarea id="translated-subject" dir="rtl" lang="he" rows="2" readonly></textarea>
         </div>
-        <label id="translated-body-label" for="translated-body">Hebrew email body — ready to copy</label>
+        <label id="translated-body-label" for="translated-body">Hebrew email body â€” ready to copy</label>
         <div id="translated-body" dir="rtl" lang="he" contenteditable="false"></div>
         <div class="actions">
           <button id="copy-subject" type="button">Copy translated subject</button>
