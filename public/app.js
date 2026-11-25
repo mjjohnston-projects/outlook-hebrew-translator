@@ -17,11 +17,9 @@ Office.onReady((info) => {
 });
 
 function showStatus(message = "") { $("#status").textContent = message; }
-function setRequestState(button, busy) {
-  $("#translate").disabled = busy;
-  $("#keyboard-hebrew").disabled = busy;
-  $("#proofread").disabled = busy;
-  if (!busy) button.disabled = false;
+// While any request runs, every action is disabled, including Apply, so a stale result cannot be applied.
+function setRequestState(busy) {
+  ["#translate", "#keyboard-hebrew", "#proofread", "#apply"].forEach((selector) => { $(selector).disabled = busy; });
 }
 
 async function postJson(url, payload, actionName) {
@@ -38,7 +36,10 @@ async function postJson(url, payload, actionName) {
     const text = await response.text();
     let data;
     try { data = text ? JSON.parse(text) : {}; }
-    catch { throw new Error(`${actionName} returned an invalid response from the local server.`); }
+    catch {
+      if (response.status === 413) throw new Error("This email is too large to process. Shorten it, or translate it in parts.");
+      throw new Error(`${actionName} returned an unexpected response from the local server (HTTP ${response.status}).`);
+    }
     if (!response.ok) throw new Error(data.error || `${actionName} failed.`);
     return data;
   } catch (error) {
@@ -75,13 +76,26 @@ function getBody() {
   }));
 }
 
+// Outlook returns a full HTML document. Keep everything outside <body> (including the <head> styles)
+// exactly as Outlook wrote it, and only work on what is inside <body>.
+function splitDocument(html) {
+  const open = /<body\b[^>]*>/i.exec(html);
+  if (!open) return { documentStart: "", bodyInnerHtml: html, documentEnd: "" };
+  const start = open.index + open[0].length;
+  const closes = [...html.matchAll(/<\/body\s*>/gi)];
+  const end = closes.length && closes.at(-1).index >= start ? closes.at(-1).index : html.length;
+  return { documentStart: html.slice(0, start), bodyInnerHtml: html.slice(start, end), documentEnd: html.slice(end) };
+}
+
 function splitPreservedTail(bodyHtml) {
   // Preserve Outlook's signature and quoted reply/forward history exactly as Outlook created them.
   // The first matching marker begins the unchanged tail of the draft.
   const markers = [
     /<(?:div|p|table|span)\b[^>]*(?:\bid|\bclass|\bdata-[\w-]*signature[\w-]*)\s*=\s*["'][^"']*signature[^"']*["'][^>]*>/i,
-    /<div\b[^>]*\bid\s*=\s*["']divRplyFwdMsg["'][^>]*>/i,
-    /<blockquote\b/i,
+    /<div\b[^>]*\bid\s*=\s*["'](?:divRplyFwdMsg|appendonsend)["'][^>]*>/i,
+    // Quoted history from other mail clients. A plain <blockquote> the user wrote is still translated.
+    /<blockquote\b[^>]*\btype\s*=\s*["']?cite\b/i,
+    /<div\b[^>]*\bclass\s*=\s*["'][^"']*\bgmail_quote\b/i,
     /<hr\b[^>]*>[\s\S]{0,800}?(?:<\/?\w+[^>]*>\s*)*(?:From|Sent|To|Subject)\s*:/i
   ];
   const starts = markers
@@ -95,28 +109,95 @@ function splitPreservedTail(bodyHtml) {
   };
 }
 
+// Reads the draft and separates the part the user is editing from everything that must stay unchanged.
+async function readDraft() {
+  const [subject, bodyHtml] = await Promise.all([getSubject(), getBody()]);
+  const { documentStart, bodyInnerHtml, documentEnd } = splitDocument(bodyHtml || "");
+  const { translatableHtml, preservedTailHtml } = splitPreservedTail(bodyInnerHtml);
+  return {
+    subject: subject || "",
+    editableHtml: translatableHtml,
+    rebuild: (newEditableHtml) => documentStart + newEditableHtml + preservedTailHtml + documentEnd
+  };
+}
+
+// Images are not sent to the AI provider: they can be megabytes of data and the sanitiser would drop them.
+// Each one is swapped for a [[IMG-n]] token and put back afterwards.
+function protectImages(html) {
+  const images = [];
+  const protectedHtml = html.replace(/<img\b[^>]*>/gi, (tag) => {
+    images.push(tag);
+    return `[[IMG-${images.length}]]`;
+  });
+  return { protectedHtml, images };
+}
+function restoreImages(html, images) {
+  let restored = html;
+  const missing = [];
+  images.forEach((tag, index) => {
+    const token = `[[IMG-${index + 1}]]`;
+    const first = restored.indexOf(token);
+    if (first === -1) { missing.push(tag); return; }
+    restored = restored.slice(0, first) + tag + restored.slice(first + token.length).split(token).join("");
+  });
+  // If the model dropped a token, keep the image rather than lose it.
+  return missing.length ? `${restored}<p>${missing.join(" ")}</p>` : restored;
+}
+
 // Standard Israeli Hebrew keyboard mapping. This repairs text typed while the
 // user intended Hebrew but Windows/Outlook was set to the English layout.
 const hebrewKeyboardMap = Object.freeze({
-  q: "/", w: "'", e: "×§", r: "×¨", t: "×", y: "×˜", u: "×•", i: "×Ÿ", o: "×", p: "×¤", "[": "]", "]": "[",
-  a: "×©", s: "×“", d: "×’", f: "×›", g: "×¢", h: "×™", j: "×—", k: "×œ", l: "×š", ";": "×£", "'": ",",
-  z: "×–", x: "×¡", c: "×‘", v: "×”", b: "× ", n: "×ž", m: "×¦", ",": "×ª", ".": "×¥", "/": "."
+  q: "/", w: "'", e: "ק", r: "ר", t: "א", y: "ט", u: "ו", i: "ן", o: "ם", p: "פ", "[": "]", "]": "[",
+  a: "ש", s: "ד", d: "ג", f: "כ", g: "ע", h: "י", j: "ח", k: "ל", l: "ך", ";": "ף", "'": ",",
+  z: "ז", x: "ס", c: "ב", v: "ה", b: "נ", n: "מ", m: "צ", ",": "ת", ".": "ץ", "/": "."
 });
 const protectedEmailTokens = /(?:https?:\/\/[^\s<]+|www\.[^\s<]+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})/gi;
+const hebrewFinalLetters = "ךםןףץ";
+const hebrewLetter = /[א-ת]/;
+// Short English words whose keys also spell plausible Hebrew (for example "do" -> "גם").
+// They are converted only when the neighbouring word is mistyped Hebrew too.
+const ambiguousEnglishWords = new Set(["a", "am", "an", "and", "are", "as", "at", "be", "but", "by", "can", "do", "for", "go", "had", "has", "have", "he", "hi", "me", "my", "no", "not", "ok", "re", "see", "send", "she", "so", "that", "the", "this", "to", "up", "us", "was", "we", "who", "yes", "you"]);
 
 function convertKeyboardSegment(value) {
-  return Array.from(value, (character) => hebrewKeyboardMap[character.toLowerCase()] || character).join("");
+  return Array.from(value, (character) => hebrewKeyboardMap[character.toLowerCase()] ?? character).join("");
+}
+
+// "english" = leave unchanged, "hebrew" = convert, "ambiguous" = follow the neighbouring words.
+function classifyKeyboardWord(word) {
+  if (!/[a-z]/i.test(word) || hebrewLetter.test(word)) return "english";
+  // Capitals, digits and non-layout characters indicate names, acronyms, numbers and real English.
+  if (/[A-Z0-9]/.test(word)) return "english";
+  const letters = word.replace(/^[^a-z]+|[^a-z]+$/g, "");
+  if (ambiguousEnglishWords.has(letters)) return "ambiguous";
+  // Hebrew final letters (ך ם ן ף ץ) only end words, so a final form in the middle means English, e.g. "file" -> "כןךק".
+  const converted = convertKeyboardSegment(word);
+  for (let index = 0; index < converted.length - 1; index++) {
+    if (hebrewFinalLetters.includes(converted[index]) && hebrewLetter.test(converted[index + 1])) return "english";
+  }
+  return "hebrew";
+}
+
+function convertKeyboardWords(value) {
+  const parts = value.split(/(\s+)/);
+  const words = parts.map((part, index) => (index % 2 === 0 && part ? { index, kind: classifyKeyboardWord(part) } : null)).filter(Boolean);
+  words.forEach((word, position) => {
+    if (word.kind !== "ambiguous") return;
+    const neighbour = [words[position - 1], words[position + 1]].find((candidate) => candidate && candidate.kind !== "ambiguous");
+    word.kind = neighbour?.kind === "hebrew" ? "hebrew" : "english";
+  });
+  words.forEach((word) => { if (word.kind === "hebrew") parts[word.index] = convertKeyboardSegment(parts[word.index]); });
+  return parts.join("");
 }
 
 function convertKeyboardText(value) {
   let converted = "";
   let cursor = 0;
   for (const match of value.matchAll(protectedEmailTokens)) {
-    converted += convertKeyboardSegment(value.slice(cursor, match.index));
+    converted += convertKeyboardWords(value.slice(cursor, match.index));
     converted += match[0];
     cursor = match.index + match[0].length;
   }
-  return converted + convertKeyboardSegment(value.slice(cursor));
+  return converted + convertKeyboardWords(value.slice(cursor));
 }
 
 function convertKeyboardHtml(bodyHtml) {
@@ -124,12 +205,15 @@ function convertKeyboardHtml(bodyHtml) {
   const walker = documentFragment.createTreeWalker(documentFragment.body, NodeFilter.SHOW_TEXT);
   const textNodes = [];
   while (walker.nextNode()) textNodes.push(walker.currentNode);
+  let changed = false;
   textNodes.forEach((textNode) => {
     // URLs and their displayed text stay unchanged, just like normal translation.
     if (textNode.parentElement?.closest("a")) return;
-    textNode.nodeValue = convertKeyboardText(textNode.nodeValue || "");
+    const original = textNode.nodeValue || "";
+    const converted = convertKeyboardText(original);
+    if (converted !== original) { textNode.nodeValue = converted; changed = true; }
   });
-  return documentFragment.body.innerHTML;
+  return { html: documentFragment.body.innerHTML, changed };
 }
 
 function alignTranslatedBody(bodyHtml, direction) {
@@ -161,84 +245,85 @@ function setBody(value) {
 }
 
 async function fixHebrewKeyboardLayout() {
-  const button = $("#keyboard-hebrew");
   if (activeRequest) return showStatus("Another request is already in progress.");
-  setRequestState(button, true);
-  showStatus("Reading and fixing the Hebrew keyboard layoutâ€¦");
+  setRequestState(true);
+  showStatus("Reading and fixing the Hebrew keyboard layout…");
   try {
-    const [subject, bodyHtml] = await Promise.all([getSubject(), getBody()]);
-    const { translatableHtml, preservedTailHtml } = splitPreservedTail(bodyHtml);
-    const correctedSubject = convertKeyboardText(subject || "");
-    const correctedTranslatableHtml = convertKeyboardHtml(translatableHtml);
-    if (correctedSubject === (subject || "") && correctedTranslatableHtml === translatableHtml) {
+    const draft = await readDraft();
+    const correctedSubject = convertKeyboardText(draft.subject);
+    const correctedBody = convertKeyboardHtml(draft.editableHtml);
+    if (correctedSubject === draft.subject && !correctedBody.changed) {
       return showStatus("No English-keyboard Hebrew text was found in the editable part of this draft.");
     }
-    const correctedBodyHtml = alignTranslatedBody(correctedTranslatableHtml, directions["en-he"]) + preservedTailHtml;
-    translated = { translatedSubject: correctedSubject, translatedBodyHtml: correctedBodyHtml };
+    const correctedEditableHtml = alignTranslatedBody(correctedBody.html, directions["en-he"]);
+    translated = { translatedSubject: correctedSubject, translatedBodyHtml: draft.rebuild(correctedEditableHtml) };
     $("#gender-label").textContent = "Hebrew keyboard layout corrected";
     $("#english-subject-label").textContent = "Original subject (typed with English keyboard)";
-    $("#english-subject").value = subject || "";
+    $("#english-subject").value = draft.subject;
     $("#translated-subject-group").hidden = false;
-    $("#translated-subject-label").textContent = "Hebrew subject â€” ready to copy";
-    $("#translated-body-label").textContent = "Hebrew email body â€” ready to copy";
+    $("#translated-subject-label").textContent = "Hebrew subject — ready to copy";
+    $("#translated-body-label").textContent = "Hebrew email body — ready to copy";
     $("#translated-subject").value = correctedSubject;
     $("#translated-subject").dir = "rtl"; $("#translated-subject").lang = "he";
-    $("#translated-body").innerHTML = correctedBodyHtml;
+    $("#translated-body").innerHTML = correctedEditableHtml;
     $("#translated-body").dir = "rtl"; $("#translated-body").lang = "he";
     $("#result").hidden = false;
     showStatus("");
   } catch (error) {
     showStatus(error.message || "Unable to fix the Hebrew keyboard layout.");
-  } finally { setRequestState(button, false); }
+  } finally { setRequestState(false); }
 }
 
 async function translateDraft() {
   const recipientGender = getGender();
   const direction = currentDirection();
   if (direction.needsRecipientForm && !recipientGender) return showStatus("Choose who is being addressed first.");
-  const button = $("#translate");
   if (activeRequest) return showStatus("Another request is already in progress.");
-  setRequestState(button, true);
-  showStatus("Reading and translating your draftâ€¦");
+  setRequestState(true);
+  showStatus("Reading and translating your draft…");
   try {
-    const [subject, bodyHtml] = await Promise.all([getSubject(), getBody()]);
-    const { translatableHtml, preservedTailHtml } = splitPreservedTail(bodyHtml);
-    const data = await postJson("/api/translate", { subject, bodyHtml: translatableHtml, recipientGender, direction: $("#direction").value }, "Translation");
-    data.translatedBodyHtml = alignTranslatedBody(data.translatedBodyHtml, direction) + preservedTailHtml;
+    const draft = await readDraft();
+    const { protectedHtml, images } = protectImages(draft.editableHtml);
+    const data = await postJson("/api/translate", { subject: draft.subject, bodyHtml: protectedHtml, recipientGender, direction: $("#direction").value }, "Translation");
+    const translatedEditableHtml = alignTranslatedBody(restoreImages(data.translatedBodyHtml, images), direction);
+    data.translatedBodyHtml = draft.rebuild(translatedEditableHtml);
     translated = data;
     $("#english-subject-label").textContent = "Suggested subject (English)";
     $("#translated-subject-group").hidden = false;
     $("#gender-label").textContent = direction.needsRecipientForm ? `Recipient: ${recipientLabels[recipientGender]}` : "Translation: Hebrew to English";
     $("#english-subject").value = data.englishSubject;
-    $("#translated-subject-label").textContent = `${direction.label} subject â€” ready to copy`;
-    $("#translated-body-label").textContent = `${direction.label} email body â€” ready to copy`;
+    $("#translated-subject-label").textContent = `${direction.label} subject — ready to copy`;
+    $("#translated-body-label").textContent = `${direction.label} email body — ready to copy`;
     $("#translated-subject").value = data.translatedSubject;
     $("#translated-subject").dir = direction.dir; $("#translated-subject").lang = direction.language;
-    $("#translated-body").innerHTML = data.translatedBodyHtml;
+    $("#translated-body").innerHTML = translatedEditableHtml;
     $("#translated-body").dir = direction.dir; $("#translated-body").lang = direction.language;
     $("#result").hidden = false;
     showStatus("");
   } catch (error) {
     showStatus(error.message || "Unable to translate this draft.");
-  } finally { setRequestState(button, false); }
+  } finally { setRequestState(false); }
 }
 
 async function proofreadDraft() {
   const language = $("#proofread-language").value;
-  const button = $("#proofread");
   if (activeRequest) return showStatus("Another request is already in progress.");
-  setRequestState(button, true);
-  showStatus("Checking spelling and grammarâ€¦");
+  setRequestState(true);
+  showStatus("Checking spelling and grammar…");
   try {
-    const [subject, bodyHtml] = await Promise.all([getSubject(), getBody()]);
-    const data = await postJson("/api/proofread", { subject, bodyHtml, language }, "Proofreading");
-    translated = { translatedSubject: data.subject, translatedBodyHtml: data.bodyHtml };
+    // Like translation, only the user's own text is proofread: the signature and quoted history
+    // are neither sent to the AI provider nor changed.
+    const draft = await readDraft();
+    const { protectedHtml, images } = protectImages(draft.editableHtml);
+    const data = await postJson("/api/proofread", { subject: draft.subject, bodyHtml: protectedHtml, language }, "Proofreading");
+    const correctedEditableHtml = restoreImages(data.bodyHtml, images);
+    translated = { translatedSubject: data.subject, translatedBodyHtml: draft.rebuild(correctedEditableHtml) };
     $("#gender-label").textContent = `Spelling & grammar: ${language}`;
-    $("#english-subject-label").textContent = "Corrected subject â€” ready to copy";
+    $("#english-subject-label").textContent = "Corrected subject — ready to copy";
     $("#english-subject").value = data.subject;
     $("#translated-subject-group").hidden = true;
-    $("#translated-body-label").textContent = "Corrected email body â€” ready to copy";
-    $("#translated-body").innerHTML = data.bodyHtml;
+    $("#translated-body-label").textContent = "Corrected email body — ready to copy";
+    $("#translated-body").innerHTML = correctedEditableHtml;
     const isHebrew = language === "Hebrew";
     $("#translated-body").dir = isHebrew ? "rtl" : "ltr";
     $("#translated-body").lang = isHebrew ? "he" : language === "Russian" ? "ru" : "en";
@@ -246,24 +331,28 @@ async function proofreadDraft() {
     showStatus("");
   } catch (error) {
     showStatus(error.message || "Unable to proofread this draft.");
-  } finally { setRequestState(button, false); }
+  } finally { setRequestState(false); }
 }
 
 async function copyText(value) {
-  await navigator.clipboard.writeText(value);
-  showStatus("Copied.");
+  try {
+    await navigator.clipboard.writeText(value);
+    showStatus("Copied.");
+  } catch {
+    showStatus("Copying was blocked. Select the text and press Ctrl+C instead.");
+  }
 }
 async function copyBody() {
   const range = document.createRange();
   range.selectNodeContents($("#translated-body"));
   const selection = window.getSelection();
   selection.removeAllRanges(); selection.addRange(range);
-  document.execCommand("copy"); selection.removeAllRanges();
-  showStatus("Copied.");
+  const copied = document.execCommand("copy"); selection.removeAllRanges();
+  showStatus(copied ? "Copied." : "Copying was blocked. Select the text and press Ctrl+C instead.");
 }
 async function applyTranslation() {
-  if (!translated) return;
-  const button = $("#apply"); button.disabled = true; showStatus("Applying translation to the draftâ€¦");
+  if (!translated || activeRequest) return;
+  const button = $("#apply"); button.disabled = true; showStatus("Applying translation to the draft…");
   try {
     await Promise.all([setSubject(translated.translatedSubject), setBody(translated.translatedBodyHtml)]);
     showStatus("Applied. Review the email, then send it when ready.");
