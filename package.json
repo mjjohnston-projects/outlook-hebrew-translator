@@ -5,15 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch server.mjs",
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "test": "node --test"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "office-addin-dev-certs": "^2.0.10",
     "openai": "^4.77.3",
-    "sanitize-html": "^2.14.0"
+    "sanitize-html": "2.17.5"
   },
   "devDependencies": {
-    "office-addin-dev-certs": "^2.0.10"
+    "jsdom": "^24.1.3"
   }
 }
