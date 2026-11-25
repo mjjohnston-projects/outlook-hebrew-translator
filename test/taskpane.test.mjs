@@ -153,3 +153,25 @@ test("Apply is disabled while another request is running", async () => {
   release(); await t.settle();
   assert.equal(t.$("#apply").disabled, false);
 });
+
+test("tail split recognises plain-text reply headers and Original Message markers", () => {
+  const { fn } = boot();
+  assert.equal(fn.splitPreservedTail("<p>Hi</p><p><b>From:</b> A</p><p>old</p>").translatableHtml, "<p>Hi</p>");
+  assert.equal(fn.splitPreservedTail("<p>Hi</p><div>-----Original Message-----</div>").translatableHtml, "<p>Hi</p>");
+  assert.equal(fn.splitPreservedTail('<p>Hi</p><div class="yahoo_quoted">old</div>').translatableHtml, "<p>Hi</p>");
+});
+
+test("Apply re-reads the draft, keeping thread changes made after Translate", async () => {
+  const t = boot({
+    subject: "Hello",
+    body: outlookDoc(`<p>Hello</p>${replyTail}`),
+    fetch: () => json({ englishSubject: "Hello", translatedSubject: "שלום", translatedBodyHtml: "<p>שלום</p>" })
+  });
+  t.$('input[value="man"]').checked = true;
+  t.$("#translate").click(); await t.settle();
+  t.draft.body = t.draft.body.replace("their private text", "their private text (updated)");
+  t.$("#apply").click(); await t.settle();
+  assert.match(t.draft.body, /שלום/);
+  assert.match(t.draft.body, /their private text \(updated\)/);
+  assert.doesNotMatch(t.draft.body, />Hello</);
+});

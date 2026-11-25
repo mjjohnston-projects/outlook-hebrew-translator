@@ -14,7 +14,7 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static(fileURLToPath(new URL("./public", import.meta.url))));
 
-// One retry absorbs a transient network timeout without requiring the Outlook user to repeat the action.
+// Requests time out after 70 seconds without retrying, so the task pane's two-minute limit is never hit.
 const createLlmProvider = () => {
   const selectedProvider = (process.env.LLM_PROVIDER || "openai").trim().toLowerCase();
 
@@ -36,8 +36,9 @@ const createLlmProvider = () => {
           Accept: "application/vnd.github+json",
           "X-GitHub-Api-Version": "2026-03-10"
         },
-        timeout: 60000,
-        maxRetries: 1
+        timeout: 70000,
+        // A retry can turn one slow translation into a two-minute wait.
+        maxRetries: 0
       })
     };
   }
@@ -53,7 +54,7 @@ const createLlmProvider = () => {
       name: "OpenAI",
       apiKeyName: "OPENAI_API_KEY",
       model,
-      client: new OpenAI({ apiKey, timeout: 60000, maxRetries: 1 })
+      client: new OpenAI({ apiKey, timeout: 70000, maxRetries: 0 })
     };
   }
 
@@ -146,6 +147,34 @@ export const sanitizeEmailHtml = (html) => sanitizeHtml(html, {
   }
 });
 
+// Outlook/Word emits lengthy presentational markup (mostly nested spans and repeated CSS). Hebrew output
+// is applied as Arial and right-to-left by the task pane, so that markup only adds latency.
+// Keep semantic layout and link destinations, which are the parts that matter here.
+export const compactTranslationHtml = (html) => sanitizeHtml(html, {
+  allowedTags: ["a", "b", "strong", "i", "em", "u", "s", "strike", "sub", "sup", "p", "br", "div", "ul", "ol", "li", "table", "thead", "tbody", "tr", "td", "th", "blockquote", "hr"],
+  allowedAttributes: { a: ["href", "title"], td: ["colspan", "rowspan"], th: ["colspan", "rowspan"] },
+  allowedSchemes: ["http", "https", "mailto"]
+});
+
+// Re-clicking Translate for an unchanged draft should be instant. The cache is in memory only and
+// expires after ten minutes, so email content is never written to disk.
+const translationCache = new Map();
+const TRANSLATION_CACHE_TTL_MS = 10 * 60 * 1000;
+const TRANSLATION_CACHE_LIMIT = 50;
+const getCachedTranslation = (key) => {
+  const cached = translationCache.get(key);
+  if (!cached) return null;
+  if (Date.now() - cached.createdAt > TRANSLATION_CACHE_TTL_MS) {
+    translationCache.delete(key);
+    return null;
+  }
+  return cached.value;
+};
+const cacheTranslation = (key, value) => {
+  if (translationCache.size >= TRANSLATION_CACHE_LIMIT) translationCache.delete(translationCache.keys().next().value);
+  translationCache.set(key, { createdAt: Date.now(), value });
+};
+
 const targetLanguages = { "en-he": "Hebrew", "en-ru": "Russian", "he-en": "English" };
 const recipientDescriptions = {
   man: ["one man", "masculine singular"],
@@ -173,10 +202,19 @@ app.post("/api/translate", async (req, res) => {
   const genderInstruction = direction === "he-en" ? "No recipient gender selection is needed for an English translation." : recipientInstruction(recipientGender, target);
   // Outlook can add a large amount of Word/Office markup. Remove that noise before calling the model,
   // while retaining the email content and common visual formatting that the add-in supports.
+  // For Hebrew, the task pane applies Arial and right-to-left layout afterwards, so send leaner HTML.
   const cleanedBodyHtml = sanitizeEmailHtml(bodyHtml || "");
-  console.log(`Translation input: ${String(bodyHtml || "").length} HTML chars, reduced to ${cleanedBodyHtml.length} chars.`);
+  const translationBodyHtml = direction === "en-he" ? compactTranslationHtml(cleanedBodyHtml) : cleanedBodyHtml;
+  const cacheKey = JSON.stringify({ subject: subject || "", bodyHtml: translationBodyHtml, recipientGender, direction, model: provider.model, provider: provider.name });
+  const cached = getCachedTranslation(cacheKey);
+  if (cached) {
+    console.log(`Translation cache hit: ${translationBodyHtml.length} HTML chars.`);
+    return res.json(cached);
+  }
+  console.log(`Translation input: ${String(bodyHtml || "").length} HTML chars, sanitized to ${cleanedBodyHtml.length}, sent to model as ${translationBodyHtml.length}.`);
 
   try {
+    const modelStarted = Date.now();
     const completion = await provider.client.chat.completions.create({
       model: provider.model,
       response_format: { type: "json_schema", json_schema: responseSchema },
@@ -187,9 +225,13 @@ app.post("/api/translate", async (req, res) => {
 Return only JSON that satisfies the schema. englishSubject must be a concise, appropriate English subject based on the email's intent. If translating Hebrew to English, it is the translated English subject; otherwise preserve the existing English subject when it is appropriate. translatedSubject is the subject in ${target}.
 Translate the email body into ${target}. Preserve the input HTML structure exactly where possible: keep every hyperlink href unchanged, keep link text translated, keep all paragraph, line-break, list, and table boundaries so the translated message has the same visual breaks. Retain each element's font family, font size, color, bold/italic/underline styling, and text alignment. Do not invent, remove, or move URLs. ${imagePlaceholderInstruction} Keep email addresses, numbers, dates, file names, identifiers, and code unchanged unless target-language punctuation needs surrounding spacing. When translating English to Hebrew, if the sign-off is exactly or substantively 'Regards, Michael', translate it exactly as 'בברכה, מייקל'. Do not add a gender label, headings, Markdown, or commentary to translatedBodyHtml.`
         },
+        ...(direction === "en-he" ? [{
+          role: "system",
+          content: "The Hebrew input has deliberately been reduced to semantic HTML for speed. Return lean semantic HTML only: no style attributes or font tags. Preserve the supplied links, paragraphs, line breaks, lists, tables, emphasis tags, and image tokens. Arial and right-to-left layout are applied by the Outlook add-in."
+        }] : []),
         {
           role: "user",
-          content: JSON.stringify({ subject: subject || "", bodyHtml: cleanedBodyHtml })
+          content: JSON.stringify({ subject: subject || "", bodyHtml: translationBodyHtml })
         }
       ]
     });
@@ -198,6 +240,8 @@ Translate the email body into ${target}. Preserve the input HTML structure exact
     const translated = JSON.parse(content);
     // The model is asked to retain the email's HTML; still, never render active content in the task pane.
     translated.translatedBodyHtml = sanitizeEmailHtml(translated.translatedBodyHtml);
+    cacheTranslation(cacheKey, translated);
+    console.log(`Translation model call (${provider.name}/${provider.model}) completed in ${Date.now() - modelStarted}ms.`);
     res.json(translated);
   } catch (error) {
     console.error(error);

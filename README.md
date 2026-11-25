@@ -91,4 +91,4 @@ After installation, open `services.msc` and manage **Outlook Email Language Assi
 
 ## Privacy
 
-The current draft's subject and the HTML of your own text (not the signature, quoted history, or images) are sent only to this app's `/api/translate` or `/api/proofread` endpoint and then to the configured LLM provider. Images are replaced by `[[IMG-1]]`-style placeholders before sending and restored afterwards. Do not use the add-in with content your organization does not permit you to process through that provider.
+The current draft's subject and the HTML of your own text (not the signature, quoted history, or images) are sent only to this app's `/api/translate` or `/api/proofread` endpoint and then to the configured LLM provider. Images are replaced by `[[IMG-1]]`-style placeholders before sending and restored afterwards. To make re-clicking Translate instant, the server keeps up to 50 recent translations in memory for ten minutes; nothing is written to disk, and restarting the service clears them. Do not use the add-in with content your organization does not permit you to process through that provider.

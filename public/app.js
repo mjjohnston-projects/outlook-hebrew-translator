@@ -91,12 +91,14 @@ function splitPreservedTail(bodyHtml) {
   // Preserve Outlook's signature and quoted reply/forward history exactly as Outlook created them.
   // The first matching marker begins the unchanged tail of the draft.
   const markers = [
-    /<(?:div|p|table|span)\b[^>]*(?:\bid|\bclass|\bdata-[\w-]*signature[\w-]*)\s*=\s*["'][^"']*signature[^"']*["'][^>]*>/i,
-    /<div\b[^>]*\bid\s*=\s*["'](?:divRplyFwdMsg|appendonsend)["'][^>]*>/i,
-    // Quoted history from other mail clients. A plain <blockquote> the user wrote is still translated.
+    // Signatures, reply/forward headers and quoted history from Outlook and other mail clients.
+    /<(?:div|p|table|span|td)\b[^>]*(?:\bid|\bclass|\bdata-[\w-]+)\s*=\s*["'][^"']*(?:signature|divRplyFwdMsg|reply[-_ ]?header|quoted|gmail_quote|yahoo_quoted|protonmail_quote)[^"']*["'][^>]*>/i,
+    /<div\b[^>]*\bid\s*=\s*["']appendonsend["'][^>]*>/i,
+    // A plain <blockquote> the user wrote is still translated; only cited ones are history.
     /<blockquote\b[^>]*\btype\s*=\s*["']?cite\b/i,
-    /<div\b[^>]*\bclass\s*=\s*["'][^"']*\bgmail_quote\b/i,
-    /<hr\b[^>]*>[\s\S]{0,800}?(?:<\/?\w+[^>]*>\s*)*(?:From|Sent|To|Subject)\s*:/i
+    /<!--\s*(?:original|forwarded)\s+message[^>]*-->/i,
+    /<(?:div|p|table|span|td)\b[^>]*>\s*(?:<br\s*\/?>(?:\s*))*?(?:<(?:b|strong|span)\b[^>]*>\s*)*(?:-{2,}\s*(?:original|forwarded)\s+message\s*-{2,}|(?:From|Sent|To|Subject)\s*:)/i,
+    /<hr\b[^>]*>[\s\S]{0,1200}?(?:<\/?\w+[^>]*>\s*)*(?:From|Sent|To|Subject)\s*:/i
   ];
   const starts = markers
     .map((marker) => marker.exec(bodyHtml)?.index)
@@ -256,7 +258,7 @@ async function fixHebrewKeyboardLayout() {
       return showStatus("No English-keyboard Hebrew text was found in the editable part of this draft.");
     }
     const correctedEditableHtml = alignTranslatedBody(correctedBody.html, directions["en-he"]);
-    translated = { translatedSubject: correctedSubject, translatedBodyHtml: draft.rebuild(correctedEditableHtml) };
+    translated = { translatedSubject: correctedSubject, replacementEditableHtml: correctedEditableHtml };
     $("#gender-label").textContent = "Hebrew keyboard layout corrected";
     $("#english-subject-label").textContent = "Original subject (typed with English keyboard)";
     $("#english-subject").value = draft.subject;
@@ -286,8 +288,7 @@ async function translateDraft() {
     const { protectedHtml, images } = protectImages(draft.editableHtml);
     const data = await postJson("/api/translate", { subject: draft.subject, bodyHtml: protectedHtml, recipientGender, direction: $("#direction").value }, "Translation");
     const translatedEditableHtml = alignTranslatedBody(restoreImages(data.translatedBodyHtml, images), direction);
-    data.translatedBodyHtml = draft.rebuild(translatedEditableHtml);
-    translated = data;
+    translated = { translatedSubject: data.translatedSubject, replacementEditableHtml: translatedEditableHtml };
     $("#english-subject-label").textContent = "Suggested subject (English)";
     $("#translated-subject-group").hidden = false;
     $("#gender-label").textContent = direction.needsRecipientForm ? `Recipient: ${recipientLabels[recipientGender]}` : "Translation: Hebrew to English";
@@ -317,7 +318,7 @@ async function proofreadDraft() {
     const { protectedHtml, images } = protectImages(draft.editableHtml);
     const data = await postJson("/api/proofread", { subject: draft.subject, bodyHtml: protectedHtml, language }, "Proofreading");
     const correctedEditableHtml = restoreImages(data.bodyHtml, images);
-    translated = { translatedSubject: data.subject, translatedBodyHtml: draft.rebuild(correctedEditableHtml) };
+    translated = { translatedSubject: data.subject, replacementEditableHtml: correctedEditableHtml };
     $("#gender-label").textContent = `Spelling & grammar: ${language}`;
     $("#english-subject-label").textContent = "Corrected subject — ready to copy";
     $("#english-subject").value = data.subject;
@@ -354,7 +355,10 @@ async function applyTranslation() {
   if (!translated || activeRequest) return;
   const button = $("#apply"); button.disabled = true; showStatus("Applying translation to the draft…");
   try {
-    await Promise.all([setSubject(translated.translatedSubject), setBody(translated.translatedBodyHtml)]);
+    // Read the draft again at the moment of Apply, so the signature, quoted thread and any changes
+    // Outlook made to them since Translate was clicked are kept exactly as they are now.
+    const draft = await readDraft();
+    await Promise.all([setSubject(translated.translatedSubject), setBody(draft.rebuild(translated.replacementEditableHtml))]);
     showStatus("Applied. Review the email, then send it when ready.");
   } catch (error) { showStatus(error.message || "Unable to apply the translation."); }
   finally { button.disabled = false; }

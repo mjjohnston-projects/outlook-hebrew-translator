@@ -103,3 +103,28 @@ test("missing provider configuration is reported", async () => {
     assert.match(result.data.error, /missing OPENAI_API_KEY/);
   } finally { process.env.OPENAI_API_KEY = saved; }
 });
+
+test("identical translations are served from the in-memory cache", async () => {
+  providerReply = replyWith({ englishSubject: "e", translatedSubject: "t", translatedBodyHtml: "<p>cached</p>" });
+  providerCalls.length = 0;
+  const request = { subject: "Cache me", bodyHtml: "<p>same</p>", direction: "en-ru", recipientGender: "man" };
+  const first = await post("/api/translate", request);
+  const second = await post("/api/translate", request);
+  assert.equal(providerCalls.length, 1);
+  assert.deepEqual(second.data, first.data);
+  await post("/api/translate", { ...request, recipientGender: "woman" });
+  assert.equal(providerCalls.length, 2);
+});
+
+test("English to Hebrew sends lean HTML; other directions keep formatting", async () => {
+  providerReply = replyWith({ englishSubject: "e", translatedSubject: "t", translatedBodyHtml: "<p>t</p>" });
+  providerCalls.length = 0;
+  const bodyHtml = '<p style="color:red"><span style="font-family:Aptos">Hi</span> <a href="https://x.org" style="color:blue">link</a> [[IMG-1]]</p>';
+  await post("/api/translate", { subject: "Lean", bodyHtml, direction: "en-he", recipientGender: "man" });
+  await post("/api/translate", { subject: "Lean", bodyHtml, direction: "en-ru", recipientGender: "man" });
+  const [hebrew, russian] = providerCalls;
+  assert.equal(JSON.parse(hebrew.messages.at(-1).content).bodyHtml, '<p>Hi <a href="https://x.org">link</a> [[IMG-1]]</p>');
+  assert.match(hebrew.messages[1].content, /lean semantic HTML/);
+  assert.match(JSON.parse(russian.messages.at(-1).content).bodyHtml, /font-family:Aptos/);
+  assert.equal(russian.messages.length, 2);
+});

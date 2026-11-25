@@ -21,11 +21,28 @@ foreach ($path in $certificatePath, $keyPath, $serviceExe, (Join-Path $appRoot '
 Stop-ScheduledTask -TaskName 'Outlook Email Language Assistant' -ErrorAction SilentlyContinue
 Unregister-ScheduledTask -TaskName 'Outlook Email Language Assistant' -Confirm:$false -ErrorAction SilentlyContinue
 
+function Wait-ForServiceRemoval {
+  param([string]$Name, [int]$TimeoutSeconds = 30)
+
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  do {
+    & sc.exe query $Name *> $null
+    # 1060 means the Service Control Manager no longer has the service name.
+    if ($LASTEXITCODE -eq 1060) { return }
+    Start-Sleep -Seconds 1
+  } while ((Get-Date) -lt $deadline)
+
+  throw "Windows is still removing '$Name'. Close services.msc and any other service-management windows, wait a few seconds, then run this installer again."
+}
+
 if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {
   Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
   & sc.exe delete $serviceName | Out-Null
-  Start-Sleep -Seconds 1
 }
+
+# The old service can remain marked for deletion briefly. Do not attempt to
+# recreate it until the Service Control Manager has released the name.
+Wait-ForServiceRemoval -Name $serviceName
 
 $arguments = "--app-root `"$appRoot`" --node-path `"$nodePath`" --certificate `"$certificatePath`" --key `"$keyPath`""
 $binaryPath = "`"$serviceExe`" $arguments"
